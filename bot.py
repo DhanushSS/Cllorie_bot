@@ -244,23 +244,40 @@ async def on_clarification_button(update: Update, context: ContextTypes.DEFAULT_
     chat_id = str(query.message.chat.id)
     pending = db.get_pending_clarification(chat_id)
     if not pending:
+        # The bot restarted (e.g. a redeploy) since this question was asked, so it no
+        # longer remembers what it was waiting for. Tell the user instead of doing nothing.
+        await context.bot.send_message(
+            chat_id=int(chat_id),
+            text="Sorry, I lost track of that after a restart — just type what you had "
+                 "(e.g. 'chicken biryani, 1 plate') and I'll log it fresh.",
+        )
         return
     answer = "veg" if query.data == "clarveg" else "non-veg"
     combined = f"{pending['food_text']}. It is {answer}."
     today = date.today().isoformat()
-    await finalize_entry(chat_id, today, pending["meal"], combined, context, is_edit=False)
+    try:
+        await finalize_entry(chat_id, today, pending["meal"], combined, context, is_edit=False)
+    except Exception:
+        logger.exception("Error finalizing entry from clarification button")
+        await context.bot.send_message(
+            chat_id=int(chat_id),
+            text="Something went wrong logging that — could you just type what you had instead?",
+        )
 
 
 async def on_skip_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     chat_id = str(query.message.chat.id)
-    meal = query.data.split("_", 1)[1]
-    today = date.today().isoformat()
-    db.upsert_meal_status(chat_id, today, meal, "skipped")
-    db.clear_pending_clarification(chat_id)
-    await context.bot.send_message(chat_id=int(chat_id), text=f"⏭️ Skipped {config.MEAL_LABELS[meal]}.")
-
+    try:
+        meal = query.data.split("_", 1)[1]
+        today = date.today().isoformat()
+        db.upsert_meal_status(chat_id, today, meal, "skipped")
+        db.clear_pending_clarification(chat_id)
+        await context.bot.send_message(chat_id=int(chat_id), text=f"⏭️ Skipped {config.MEAL_LABELS[meal]}.")
+    except Exception:
+        logger.exception("Error handling skip button")
+        await context.bot.send_message(chat_id=int(chat_id), text="Couldn't process that — try /skip instead.")
 
 async def on_edit_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -271,7 +288,6 @@ async def on_edit_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await context.bot.send_message(
         chat_id=int(chat_id), text=f"Okay — what did you actually have for {config.MEAL_LABELS[meal]}?"
     )
-
 
 def main() -> None:
     app = ApplicationBuilder().token(config.TELEGRAM_BOT_TOKEN).post_init(post_init).build()

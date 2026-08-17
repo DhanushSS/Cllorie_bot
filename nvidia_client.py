@@ -27,6 +27,13 @@ no <think> tags, no commentary before or after it. Your entire reply must be exa
   "notes": "<one short sentence about assumptions you made, e.g. portion size>"
 }
 
+- If quantity isn't mentioned, assume a single serving as it would typically arrive at a restaurant or from a \
+delivery app - NOT a small home-cooked portion. Restaurant single portions, especially rice dishes like biryani, \
+pulao, or fried rice, are commonly 500-800g and correspondingly calorie-dense (a single restaurant chicken/mutton \
+biryani portion is often 1200-1500 kcal, not 400-600). Only assume a lighter/smaller portion if the user's wording \
+implies one (e.g. "small", "half plate", "kids portion", "just a bit"). State the portion size you assumed in \
+"notes" so the user can correct it if it's off.
+
 Rules:
 - If the dish could reasonably be veg OR non-veg and the text doesn't already make that clear (e.g. biryani, curry, \
 sandwich, roll, fried rice, soup, pulao) set needs_clarification=true and ask ONE short question, e.g. \

@@ -16,6 +16,14 @@ GOOGLE_SERVICE_ACCOUNT_JSON = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
 GOOGLE_SHEET_ID = os.environ["GOOGLE_SHEET_ID"]
 GOOGLE_SHEET_TAB = os.environ.get("GOOGLE_SHEET_TAB", "Logs")
 
+
+# Optional: a free API Ninjas key (https://api-ninjas.com/register) unlocks real
+# nutrition-database lookups for common/generic foods, which are consistent (same
+# query -> same answer) unlike LLM estimates. If unset, the bot falls back to
+# AI-only estimation for everything.
+NUTRITION_API_KEY = os.environ.get("NUTRITION_API_KEY", "")
+NUTRITION_API_URL = "https://api.api-ninjas.com/v1/nutrition"
+
 TIMEZONE = ZoneInfo(os.environ.get("TIMEZONE", "Asia/Kolkata"))
 
 

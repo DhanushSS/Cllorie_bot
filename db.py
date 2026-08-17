@@ -18,6 +18,12 @@ def _conn() -> sqlite3.Connection:
             key TEXT PRIMARY KEY, value TEXT
         )"""
     )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS food_cache(
+            food_key TEXT PRIMARY KEY, calories REAL, protein REAL,
+            category TEXT, notes TEXT
+        )"""
+    )
     conn.commit()
     return conn
 
@@ -119,3 +125,35 @@ def earliest_pending_meal(chat_id: str, date_str: str) -> str | None:
         if st not in ("logged", "skipped"):
             return meal
     return None
+
+
+# ---- food estimate cache (keeps repeat entries of the same food consistent) ----
+
+def food_cache_key(food_text: str) -> str:
+    return " ".join(food_text.strip().lower().split())
+
+
+def get_cached_food(food_key: str):
+    conn = _conn()
+    row = conn.execute(
+        "SELECT calories, protein, category, notes FROM food_cache WHERE food_key=?",
+        (food_key,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {"calories": row[0], "protein_g": row[1], "category": row[2], "notes": row[3]}
+
+
+def set_cached_food(food_key: str, calories: float, protein: float, category: str, notes: str) -> None:
+    conn = _conn()
+    conn.execute(
+        """INSERT INTO food_cache(food_key, calories, protein, category, notes)
+        VALUES(?,?,?,?,?)
+        ON CONFLICT(food_key) DO UPDATE SET
+            calories=excluded.calories, protein=excluded.protein,
+            category=excluded.category, notes=excluded.notes""",
+        (food_key, calories, protein, category, notes),
+    )
+    conn.commit()
+    conn.close()

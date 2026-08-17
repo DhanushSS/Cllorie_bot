@@ -15,6 +15,7 @@ from telegram.ext import (
 import charts
 import config
 import db
+import nutrition_api
 import nvidia_client
 import sheets_client
 
@@ -186,9 +187,32 @@ async def finalize_entry(
         await context.bot.send_message(chat_id=int(chat_id), text=question, reply_markup=kb)
         return
 
-    calories = result.get("calories") or 0
-    protein = result.get("protein_g") or 0
-    category = result.get("category", "unknown")
+        # Once the food is unambiguous, resolve the actual numbers in this priority order:
+    # 1. Cache - guarantees the exact same description always gives the exact same
+    #    numbers, whether it was previously priced by the database or the AI.
+    # 2. A real nutrition database (API Ninjas) - deterministic, covers common/generic
+    #    foods. Not configured or no match -> falls through to the AI's own estimate.
+    # 3. The AI's estimate from earlier in this function, as a last resort.
+    cache_key = db.food_cache_key(food_text)
+    cached = db.get_cached_food(cache_key)
+    if cached:
+        calories = cached["calories"]
+        protein = cached["protein_g"]
+        category = cached["category"]
+        source_note = cached["notes"]
+    else:
+        db_result = nutrition_api.lookup(food_text)
+        if db_result:
+            calories, protein = db_result
+            category = result.get("category", "unknown")
+            source_note = "from nutrition database"
+        else:
+            calories = result.get("calories") or 0
+            protein = result.get("protein_g") or 0
+            category = result.get("category", "unknown")
+            ai_note = result.get("notes")
+            source_note = f"AI estimate{': ' + ai_note if ai_note else ''}"
+        db.set_cached_food(cache_key, calories, protein, category, source_note)
 
     if is_edit:
         sheets_client.update_entry(today, meal, food_text, category, calories, protein)
@@ -198,11 +222,10 @@ async def finalize_entry(
     db.upsert_meal_status(chat_id, today, meal, "logged", food_text, category, calories, protein)
     db.clear_pending_clarification(chat_id)
 
-    note = f"\n({result['notes']})" if result.get("notes") else ""
     verb = "Updated" if is_edit else "Logged"
     await context.bot.send_message(
         chat_id=int(chat_id),
-        text=f"✅ {verb} {label}: {food_text}\n~{calories:.0f} kcal · {protein:.0f} g protein{note}",
+        text=f"✅ {verb} {label}: {food_text}\n~{calories:.0f} kcal · {protein:.0f} g protein\n({source_note})",
     )
 
 

@@ -30,14 +30,14 @@ def lookup(query: str):
         logger.warning("Nutrition API lookup failed for %r: %s", query, e)
         return None
 
-    if not items:
-        return None
+        if not items:
+         return None
 
-        def _num(v):
-            try:
-                return float(v)
-            except (TypeError, ValueError):
-                return 0.0
+    def _num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
 
     total_cal = sum(_num(i.get("calories", 0)) for i in items)
     total_protein = sum(_num(i.get("protein_g", 0)) for i in items)

@@ -24,6 +24,11 @@ GOOGLE_SHEET_TAB = os.environ.get("GOOGLE_SHEET_TAB", "Logs")
 NUTRITION_API_KEY = os.environ.get("NUTRITION_API_KEY", "")
 NUTRITION_API_URL = "https://api.api-ninjas.com/v1/nutrition"
 
+# Flat multiplier applied to every logged calorie number, regardless of source
+# (cache, database, or AI estimate). Protein is left untouched. Override via env
+# var if you ever want a different factor without touching code.
+CALORIE_MULTIPLIER = float(os.environ.get("CALORIE_MULTIPLIER", "1.3"))
+
 TIMEZONE = ZoneInfo(os.environ.get("TIMEZONE", "Asia/Kolkata"))
 
 

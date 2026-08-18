@@ -212,7 +212,11 @@ async def finalize_entry(
             category = result.get("category", "unknown")
             ai_note = result.get("notes")
             source_note = f"AI estimate{': ' + ai_note if ai_note else ''}"
-        db.set_cached_food(cache_key, calories, protein, category, source_note)
+            db.set_cached_food(cache_key, calories, protein, category, source_note)
+
+    # Cache/database/AI all store the raw number - the multiplier is applied once,
+    # right here, regardless of which of those it came from.
+    calories = round((calories or 0) * config.CALORIE_MULTIPLIER, 1)
 
     if is_edit:
         sheets_client.update_entry(today, meal, food_text, category, calories, protein)

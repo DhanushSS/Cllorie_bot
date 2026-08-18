@@ -33,8 +33,14 @@ def lookup(query: str):
     if not items:
         return None
 
-    total_cal = sum(i.get("calories", 0) or 0 for i in items)
-    total_protein = sum(i.get("protein_g", 0) or 0 for i in items)
+        def _num(v):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return 0.0
+
+    total_cal = sum(_num(i.get("calories", 0)) for i in items)
+    total_protein = sum(_num(i.get("protein_g", 0)) for i in items)
     if total_cal <= 0:
         return None
     return round(total_cal, 1), round(total_protein, 1)

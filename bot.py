@@ -312,6 +312,22 @@ async def on_edit_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         chat_id=int(chat_id), text=f"Okay — what did you actually have for {config.MEAL_LABELS[meal]}?"
     )
 
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Global fallback: any exception a handler doesn't catch itself lands here.
+    We log it AND tell the user something broke, instead of them getting silence."""
+    logger.exception("Unhandled exception while processing update: %s", update)
+    chat_id = None
+    if isinstance(update, Update) and update.effective_chat:
+        chat_id = update.effective_chat.id
+    if chat_id is not None:
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="⚠️ Something went wrong processing that — I've logged it. Please try again.",
+            )
+        except Exception:
+            pass
+
 def main() -> None:
     app = ApplicationBuilder().token(config.TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
@@ -328,7 +344,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(on_edit_button, pattern="^edit_"))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
+    app.add_error_handler(on_error)
     logger.info("Bot starting (polling)...")
     app.run_polling()
 

@@ -8,7 +8,7 @@ import config
 
 logger = logging.getLogger("calorie-bot.nvidia")
 
-client = OpenAI(base_url=config.NVIDIA_BASE_URL, api_key=config.NVIDIA_API_KEY, timeout=45, max_retries=1)
+client = OpenAI(base_url=config.NVIDIA_BASE_URL, api_key=config.NVIDIA_API_KEY, timeout=45, max_retries=0)
 
 SYSTEM_PROMPT = """You are a nutrition estimation assistant for a personal food diary (mostly Indian home-cooked \
 and restaurant food, but handle any cuisine).
@@ -40,8 +40,7 @@ sandwich, roll, fried rice, soup, pulao) set needs_clarification=true and ask ON
 "Veg or non-veg? Roughly how many plates/cups?". Leave calories/protein/category as null/unknown in that case.
 - If quantity isn't mentioned, assume one standard home or restaurant serving and state that assumption in "notes"; \
 don't ask a clarifying question just for missing quantity.
-- If the incoming text already looks like it's answering a previous clarifying question (mentions veg/non-veg, or \
-gives a quantity), incorporate it and set needs_clarification=false.
+- If the incoming text already looks like it's answering a previous clarifying question (mentions veg/non-veg), incorporate it and set needs_clarification=false.
 - Keep calorie and protein numbers realistic for typical portions.
 - Never leave calories/protein null unless needs_clarification is true.
 
@@ -119,8 +118,9 @@ def estimate(meal_label: str, food_text: str) -> dict:
             {"role": "user", "content": user_msg},
         ],
         temperature=0.2,
-        max_tokens=300,
-        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        max_tokens=500,
+        extra_body=({"reasoning_effort": "low"} if config.NVIDIA_MODEL.startswith("openai/gpt-oss")
+                    else {"chat_template_kwargs": {"enable_thinking": False}}),
     )
     raw = resp.choices[0].message.content or ""
     logger.info("NVIDIA raw response: %r", raw)

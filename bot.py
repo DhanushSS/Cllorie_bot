@@ -1,8 +1,11 @@
 import logging
+import asyncio
 import sys
 import re
 from functools import wraps
 from datetime import datetime, date, timedelta
+
+from openai import APIConnectionError, APIStatusError
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -130,7 +133,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 @owner_only
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     d = today_local()
-    df = sheets_client.get_entries_df(start_date=d, end_date=d)
+    df = await asyncio.to_thread(sheets_client.get_entries_df, start_date=d, end_date=d)
     await update.message.reply_text(charts.summary_text(df))
 
 
@@ -147,7 +150,7 @@ async def cmd_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def _send_report(update: Update, context: ContextTypes.DEFAULT_TYPE, days: int, title: str) -> None:
     end = today_local()
     start = end - timedelta(days=days - 1)
-    df = sheets_client.get_entries_df(start_date=start, end_date=end)
+    df = await asyncio.to_thread(sheets_client.get_entries_df, start_date=start, end_date=end)
     await update.message.reply_text(f"{title}\n\n{charts.summary_text(df)}")
     buf = charts.build_chart(df, title)
     if buf:
@@ -236,7 +239,16 @@ async def finalize_entry(
     else:
         if result is None:
             await context.bot.send_chat_action(chat_id=int(chat_id), action="typing")
-            result = nvidia_client.estimate(label, food_text)
+            await context.bot.send_message(chat_id=int(chat_id), text="Estimating calories and protein…")
+            try:
+                result = await asyncio.to_thread(nvidia_client.estimate, label, food_text)
+            except (APIConnectionError, APIStatusError) as exc:
+                logger.warning("NVIDIA estimate unavailable (%s)", type(exc).__name__)
+                await context.bot.send_message(
+                    chat_id=int(chat_id),
+                    text="The nutrition AI is unavailable or took too long. Nothing was saved. Please try again shortly.",
+                )
+                return
 
         if result["needs_clarification"]:
             question = result.get("clarification_question") or "Could you clarify — veg or non-veg?"
@@ -248,7 +260,7 @@ async def finalize_entry(
             await context.bot.send_message(chat_id=int(chat_id), text=question, reply_markup=kb)
             return
 
-        db_result = nutrition_api.lookup(food_text)
+        db_result = await asyncio.to_thread(nutrition_api.lookup, food_text)
         ai_cal = nutrition_api.nutrient(result.get("calories"))
         ai_pro = nutrition_api.nutrient(result.get("protein_g"))
         valid_ai = ai_cal is not None and ai_cal > 0 and ai_pro is not None
@@ -274,9 +286,9 @@ async def finalize_entry(
     calories = round((calories or 0) * config.CALORIE_MULTIPLIER, 1)
 
     if is_edit:
-        sheets_client.update_entry(today, meal, food_text, category, calories, protein)
+        await asyncio.to_thread(sheets_client.update_entry, today, meal, food_text, category, calories, protein)
     else:
-        sheets_client.append_entry(today, meal, food_text, category, calories, protein)
+        await asyncio.to_thread(sheets_client.append_entry, today, meal, food_text, category, calories, protein)
 
     db.upsert_meal_status(chat_id, today, meal, "logged", food_text, category, calories, protein)
     db.clear_pending_clarification(chat_id)
@@ -420,7 +432,7 @@ async def cmd_fix(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     calories, protein = round(calories, 1), round(protein, 1)
     food, category = entry["food_text"], entry["category"]
-    sheets_client.update_entry(today, meal, food, category, calories, protein)
+    await asyncio.to_thread(sheets_client.update_entry, today, meal, food, category, calories, protein)
     db.upsert_meal_status(chat_id, today, meal, "logged", food, category, calories, protein)
     db.set_cached_food(db.food_cache_key(food), calories / config.CALORIE_MULTIPLIER,
                        protein, category, "manually corrected")

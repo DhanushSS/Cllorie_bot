@@ -42,7 +42,7 @@ literal values: do not wrap the JSON or other values in outer shell quotes.
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Required, replacement token from BotFather |
 | `NVIDIA_API_KEY` | Required NVIDIA API key |
-| `NVIDIA_MODEL` | `nvidia/nemotron-3.5-lightning-30b-a3b` |
+| `NVIDIA_MODEL` | `openai/gpt-oss-20b` |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Required service-account JSON, one line |
 | `GOOGLE_SHEET_ID` | Required sheet ID; share sheet with the service account as Editor |
 | `GOOGLE_SHEET_TAB` | `Logs` |
@@ -59,8 +59,13 @@ literal values: do not wrap the JSON or other values in outer shell quotes.
 Google Sheet column order is unchanged:
 `Date, Meal, Food, Category, Calories, Protein_g, LoggedAt`.
 Both Date and LoggedAt use the configured timezone.
-The NVIDIA model is listed at https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b/build .
-Thinking is disabled in the client request.
+The default runs through NVIDIA's API, using the same NVIDIA key (no separate OpenAI
+key). A live Azure test returned a valid estimate from `openai/gpt-oss-20b` in 1.9 seconds.
+The previously selected Nemotron 3.5 Lightning took 89.3 seconds and exceeded the bot's
+45-second request timeout. The default therefore uses GPT OSS with low reasoning effort;
+Nemotron overrides still send `enable_thinking=false`. The bot gives immediate progress
+feedback and moves network calls off the event loop so reminders can keep running.
+A provider timeout leaves the meal pending and asks the owner to retry.
 
 ## Azure setup
 

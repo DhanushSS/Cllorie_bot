@@ -207,3 +207,47 @@ def test_clarification_does_not_log_early(monkeypatch,ctx):
     assert db.earliest_pending_meal('42','2026-10-18')=='morning'
     buttons=ctx.bot.send_message.call_args.kwargs['reply_markup'].inline_keyboard[0]
     assert [b.text for b in buttons]==['Veg','Non-veg']
+
+
+def test_provider_timeout_keeps_meal_pending(monkeypatch,ctx):
+    from openai import APITimeoutError
+    import httpx
+    monkeypatch.setattr(nvidia_client,'estimate',Mock(side_effect=APITimeoutError(request=httpx.Request('POST','https://example.test'))))
+    run(bot.finalize_entry('42','2026-10-18','morning','banana',ctx,False))
+    sheets_client.append_entry.assert_not_called()
+    assert db.earliest_pending_meal('42','2026-10-18')=='morning'
+    assert 'Nothing was saved' in ctx.bot.send_message.call_args.kwargs['text']
+
+
+def test_estimation_does_not_block_event_loop(monkeypatch,ctx):
+    import threading
+    entered,release=threading.Event(),threading.Event()
+    def estimate(*args):
+        entered.set()
+        release.wait(2)
+        return {'needs_clarification':False,'calories':100,'protein_g':4}
+    monkeypatch.setattr(nvidia_client,'estimate',estimate)
+    async def check():
+        task=asyncio.create_task(bot.finalize_entry('42','2026-10-18','morning','banana',ctx,False))
+        try:
+            for _ in range(100):
+                if entered.is_set(): break
+                await asyncio.sleep(.001)
+            assert entered.is_set()
+            assert not task.done()
+            assert not release.is_set()
+        finally:
+            release.set()
+            await task
+    run(check())
+
+
+def test_estimator_uses_fast_model_settings(monkeypatch):
+    import importlib
+    module=importlib.reload(nvidia_client)
+    create=Mock(return_value=SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"needs_clarification":false,"calories":105,"protein_g":1.3}'))]))
+    monkeypatch.setattr(module.client.chat.completions,'create',create)
+    monkeypatch.setattr(config,'NVIDIA_MODEL','openai/gpt-oss-20b')
+    result=module.estimate('Breakfast','one banana')
+    assert result['calories']==105
+    assert create.call_args.kwargs['extra_body']=={'reasoning_effort':'low'}

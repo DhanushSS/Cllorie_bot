@@ -24,7 +24,7 @@ def isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(bot.sheets_client, 'update_entry', Mock())
     monkeypatch.setattr(bot.nutrition_api, 'lookup', Mock(return_value=None))
     monkeypatch.setattr(bot.nvidia_client, 'estimate', Mock(return_value={
-        'needs_clarification': False, 'calories': 100, 'protein_g': 4, 'category': 'veg'}))
+        'is_food':True,'needs_clarification': False, 'calories': 100, 'protein_g': 4, 'category': 'veg'}))
     db.set_kv('chat_id', '42')
 
 

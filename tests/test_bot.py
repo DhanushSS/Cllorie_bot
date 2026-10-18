@@ -156,7 +156,7 @@ def test_restart_schedules_persisted_owner():
 
 
 def test_invalid_estimate_never_saved(monkeypatch, ctx):
-    monkeypatch.setattr(nvidia_client,'estimate',Mock(return_value={'needs_clarification':False,'calories':None,'protein_g':None}))
+    monkeypatch.setattr(nvidia_client,'estimate',Mock(return_value={'is_food':True,'needs_clarification':False,'calories':None,'protein_g':None}))
     run(bot.finalize_entry('42','2026-10-18','morning','invalid',ctx,False))
     sheets_client.append_entry.assert_not_called()
     assert db.get_cached_food('invalid') is None
@@ -200,7 +200,7 @@ def test_report_sends_real_chart(days,command,monkeypatch,ctx,update):
 
 def test_clarification_does_not_log_early(monkeypatch,ctx):
     monkeypatch.setattr(nvidia_client,'estimate',Mock(return_value={
-        'needs_clarification':True,'clarification_question':'Veg or non-veg?'}))
+        'is_food':True,'needs_clarification':True,'clarification_question':'Veg or non-veg?'}))
     run(bot.finalize_entry('42','2026-10-18','morning','biryani',ctx,False))
     sheets_client.append_entry.assert_not_called()
     assert db.get_pending_clarification('42')['date']=='2026-10-18'
@@ -225,7 +225,7 @@ def test_estimation_does_not_block_event_loop(monkeypatch,ctx):
     def estimate(*args):
         entered.set()
         release.wait(2)
-        return {'needs_clarification':False,'calories':100,'protein_g':4}
+        return {'is_food':True,'needs_clarification':False,'calories':100,'protein_g':4}
     monkeypatch.setattr(nvidia_client,'estimate',estimate)
     async def check():
         task=asyncio.create_task(bot.finalize_entry('42','2026-10-18','morning','banana',ctx,False))
@@ -251,3 +251,41 @@ def test_estimator_uses_fast_model_settings(monkeypatch):
     result=module.estimate('Breakfast','one banana')
     assert result['calories']==105
     assert create.call_args.kwargs['extra_body']=={'reasoning_effort':'low'}
+
+
+@pytest.mark.parametrize('text',['hi','Hi!','hello','thanks','good morning','how are you','Hi. It is veg.'])
+def test_greeting_never_estimates_or_logs(text,update,ctx):
+    update.message.text=text
+    run(bot.handle_text(update,ctx))
+    nvidia_client.estimate.assert_not_called()
+    sheets_client.append_entry.assert_not_called()
+    assert db.earliest_pending_meal('42',bot.today_local().isoformat())=='morning'
+    assert 'Tell me what you ate' in update.message.reply_text.call_args.args[0]
+
+
+def test_old_greeting_cache_is_never_used(ctx):
+    db.set_cached_food('hi. it is veg.',550,15,'veg','old false entry')
+    run(bot.finalize_entry('42','2026-10-18','morning','Hi. It is veg.',ctx,False))
+    sheets_client.append_entry.assert_not_called()
+    assert db.earliest_pending_meal('42','2026-10-18')=='morning'
+
+
+@pytest.mark.parametrize('result',[
+    {'is_food':False,'needs_clarification':False,'calories':550,'protein_g':15},
+    {'needs_clarification':False,'calories':550,'protein_g':15},
+    {'is_food':False,'needs_clarification':True,'clarification_question':'Veg?'}
+])
+def test_nonfood_or_missing_classification_never_saved(result,monkeypatch,ctx):
+    monkeypatch.setattr(nvidia_client,'estimate',Mock(return_value=result))
+    run(bot.finalize_entry('42','2026-10-18','morning','unrelated message',ctx,False))
+    sheets_client.append_entry.assert_not_called()
+    assert db.get_cached_food('unrelated message') is None
+    assert db.get_pending_clarification('42') is None
+
+
+def test_greeting_preserves_real_pending_clarification(update,ctx):
+    day=bot.today_local().isoformat()
+    db.set_pending_clarification('42','morning','Veg?','biryani',day,False)
+    update.message.text='hello'
+    run(bot.handle_text(update,ctx))
+    assert db.get_pending_clarification('42')['food_text']=='biryani'

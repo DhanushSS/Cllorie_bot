@@ -42,7 +42,7 @@ literal values: do not wrap the JSON or other values in outer shell quotes.
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Required, replacement token from BotFather |
 | `NVIDIA_API_KEY` | Required NVIDIA API key |
-| `NVIDIA_MODEL` | `openai/gpt-oss-20b` |
+| `NVIDIA_MODEL` | `nvidia/nemotron-3.5-lightning-30b-a3b` |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Required service-account JSON, one line |
 | `GOOGLE_SHEET_ID` | Required sheet ID; share sheet with the service account as Editor |
 | `GOOGLE_SHEET_TAB` | `Logs` |
@@ -59,13 +59,19 @@ literal values: do not wrap the JSON or other values in outer shell quotes.
 Google Sheet column order is unchanged:
 `Date, Meal, Food, Category, Calories, Protein_g, LoggedAt`.
 Both Date and LoggedAt use the configured timezone.
-The default runs through NVIDIA's API, using the same NVIDIA key (no separate OpenAI
-key). A live Azure test returned a valid estimate from `openai/gpt-oss-20b` in 1.9 seconds.
-The previously selected Nemotron 3.5 Lightning took 89.3 seconds and exceeded the bot's
-45-second request timeout. The default therefore uses GPT OSS with low reasoning effort;
-Nemotron overrides still send `enable_thinking=false`. The bot gives immediate progress
-feedback and moves network calls off the event loop so reminders can keep running.
-A provider timeout leaves the meal pending and asks the owner to retry.
+The default is Nemotron 3.5 Lightning through NVIDIA's API, with thinking disabled
+and a 120-second timeout. The owner prefers careful handling over low latency.
+A greeting is handled locally and never sent for estimation or cached as food.
+For other uncached messages the model must explicitly confirm `is_food=true` before
+any estimate or dietary clarification is accepted. Missing/false classification,
+invalid nutrients and provider errors leave the meal unsaved. Network calls run
+off the event loop so reminders remain responsive while inference is pending.
+Totals for real foods are estimates; describe portions and use `/fix` for known values.
+
+An initial live test used GPT OSS 20B to address an 89-second Nemotron response,
+but the user found it had treated a greeting plus a Veg answer as a meal. The false
+row/cache entry was removed with a reversible backup, the original model restored,
+and deterministic greeting plus strict food-validation checks were added.
 
 ## Azure setup
 

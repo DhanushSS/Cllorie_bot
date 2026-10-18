@@ -80,6 +80,18 @@ def owner_only(func):
     return guarded
 
 
+def is_conversation(text: str) -> bool:
+    # Also reject historic false entries such as "Hi. It is veg." before cache access.
+    original = re.split(r"\.\s*(?:Clarification:|It is (?:veg|non-veg)\.)", text, maxsplit=1, flags=re.I)[0]
+    normalized = " ".join(re.sub(r"[^\w\s]", " ", original.casefold()).split())
+    return normalized in {
+        "hi", "hii", "hiii", "hello", "hey", "hey bot", "hello bot", "hi bot",
+        "good morning", "good afternoon", "good evening", "good night",
+        "how are you", "how are you doing", "thanks", "thank you", "ok", "okay",
+        "bye", "test", "start", "help", "yo", "namaste", "vanakkam",
+    }
+
+
 def current_pending(chat_id, today):
     pending = db.get_pending_clarification(chat_id)
     if pending and pending.get("date") != today:
@@ -228,6 +240,10 @@ async def finalize_entry(
     result: dict | None = None,
 ) -> None:
     label = config.MEAL_LABELS[meal]
+    if is_conversation(food_text):
+        db.clear_pending_clarification(chat_id)
+        await context.bot.send_message(chat_id=int(chat_id), text="Please tell me what you ate, including the quantity. A greeting is not a meal, so nothing was logged.")
+        return
 
     cache_key = db.food_cache_key(food_text)
     cached = db.get_cached_food(cache_key)
@@ -239,7 +255,7 @@ async def finalize_entry(
     else:
         if result is None:
             await context.bot.send_chat_action(chat_id=int(chat_id), action="typing")
-            await context.bot.send_message(chat_id=int(chat_id), text="Estimating calories and protein…")
+            await context.bot.send_message(chat_id=int(chat_id), text="Checking your meal and portion…")
             try:
                 result = await asyncio.to_thread(nvidia_client.estimate, label, food_text)
             except (APIConnectionError, APIStatusError) as exc:
@@ -249,6 +265,10 @@ async def finalize_entry(
                     text="The nutrition AI is unavailable or took too long. Nothing was saved. Please try again shortly.",
                 )
                 return
+
+        if result.get("is_food") is not True:
+            await context.bot.send_message(chat_id=int(chat_id), text="I couldn't identify a food in that message. Please tell me what you ate and how much; nothing was logged.")
+            return
 
         if result["needs_clarification"]:
             question = result.get("clarification_question") or "Could you clarify — veg or non-veg?"
@@ -308,6 +328,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     text = update.message.text.strip()
+    if is_conversation(text):
+        await update.message.reply_text("Hi! Tell me what you ate and how much, for example ‘2 idlis and sambar’. Use /today to see your log or /help for commands.")
+        return
     today = today_local().isoformat()
 
     pending = current_pending(chat_id, today)

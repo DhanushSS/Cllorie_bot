@@ -1,10 +1,12 @@
 import json
 import sqlite3
+from pathlib import Path
 
 import config
 
 
 def _conn() -> sqlite3.Connection:
+    Path(config.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(config.DB_PATH)
     conn.execute(
         """CREATE TABLE IF NOT EXISTS meal_status(
@@ -57,10 +59,12 @@ def delete_kv(key: str) -> None:
 
 # ---- pending clarification (e.g. "is it veg or non-veg?") ----
 
-def set_pending_clarification(chat_id: str, meal: str, question: str, food_text: str) -> None:
+def set_pending_clarification(chat_id: str, meal: str, question: str, food_text: str,
+                              date_str: str | None = None, is_edit: bool = False) -> None:
     set_kv(
         f"pending_clar:{chat_id}",
-        json.dumps({"meal": meal, "question": question, "food_text": food_text}),
+        json.dumps({"meal": meal, "question": question, "food_text": food_text,
+                    "date": date_str, "is_edit": is_edit}),
     )
 
 

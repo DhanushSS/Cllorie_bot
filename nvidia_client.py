@@ -8,7 +8,7 @@ import config
 
 logger = logging.getLogger("calorie-bot.nvidia")
 
-client = OpenAI(base_url=config.NVIDIA_BASE_URL, api_key=config.NVIDIA_API_KEY)
+client = OpenAI(base_url=config.NVIDIA_BASE_URL, api_key=config.NVIDIA_API_KEY, timeout=45, max_retries=1)
 
 SYSTEM_PROMPT = """You are a nutrition estimation assistant for a personal food diary (mostly Indian home-cooked \
 and restaurant food, but handle any cuisine).

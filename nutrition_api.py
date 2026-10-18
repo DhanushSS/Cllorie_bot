@@ -1,4 +1,6 @@
+import json
 import logging
+import math
 
 import requests
 
@@ -7,40 +9,44 @@ import config
 logger = logging.getLogger("calorie-bot.nutrition_api")
 
 
-def lookup(query: str):
-    """Query the API Ninjas Nutrition API for real nutrition data.
+def nutrient(value):
+    """Accept numeric strings without turning missing nutrients into zero."""
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+        return number if math.isfinite(number) and number >= 0 else None
+    except (TypeError, ValueError):
+        return None
 
-    Returns (calories, protein_g) as floats if it recognized at least one item with
-    non-zero calories, or None if it found nothing / isn't configured / the call failed.
-    This is deterministic - the same query returns the same numbers every time, unlike
-    an LLM estimate.
-    """
+
+def lookup(query: str):
+    """Return complete numeric totals, or None (including free-tier placeholders)."""
     if not config.NUTRITION_API_KEY:
         return None
     try:
         resp = requests.get(
-            config.NUTRITION_API_URL,
-            params={"query": query},
-            headers={"X-Api-Key": config.NUTRITION_API_KEY},
-            timeout=8,
+            config.NUTRITION_API_URL, params={"query": query},
+            headers={"X-Api-Key": config.NUTRITION_API_KEY}, timeout=8,
         )
         resp.raise_for_status()
         items = resp.json()
-    except Exception as e:
-        logger.warning("Nutrition API lookup failed for %r: %s", query, e)
+    except (requests.RequestException, ValueError) as exc:
+        logger.warning("Nutrition API lookup unavailable (%s)", type(exc).__name__)
         return None
 
-        if not items:
-         return None
-
-    def _num(v):
-        try:
-            return float(v)
-        except (TypeError, ValueError):
-            return 0.0
-
-    total_cal = sum(_num(i.get("calories", 0)) for i in items)
-    total_protein = sum(_num(i.get("protein_g", 0)) for i in items)
-    if total_cal <= 0:
+    logger.info("Nutrition API response: %s", json.dumps(items, ensure_ascii=True)[:300])
+    if not isinstance(items, list) or not items:
         return None
-    return round(total_cal, 1), round(total_protein, 1)
+    total_cal = total_protein = 0.0
+    for item in items:
+        if not isinstance(item, dict):
+            return None
+        calories = nutrient(item.get("calories"))
+        protein = nutrient(item.get("protein_g"))
+        if calories is None or protein is None:
+            logger.info("Nutrition database not usable: missing/non-numeric nutrients; using AI")
+            return None
+        total_cal += calories
+        total_protein += protein
+    return (round(total_cal, 1), round(total_protein, 1)) if total_cal > 0 else None

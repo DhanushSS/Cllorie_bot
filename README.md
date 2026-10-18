@@ -1,111 +1,144 @@
-# Telegram Calorie & Protein Tracker Bot
+# Cllorie Bot
 
-A personal Telegram bot that pings you at morning/afternoon/night, asks what you ate, estimates
-calories & protein with an NVIDIA-hosted LLM, logs everything to a Google Sheet, and gives you
-today/week/month reports with charts — right inside Telegram.
+Personal Telegram calorie and protein diary, hosted on Azure with outbound polling.
+Meals are recorded in Google Sheets; SQLite preserves ownership, meal state, pending
+clarifications and raw food estimates across deployments. Default timezone is Asia/Kolkata.
 
-## How it behaves
+## Commands
 
-- Three daily check-ins (times configurable). It won't ask about the next meal until the current
-  one is logged **or** skipped.
-- If a dish is ambiguous (biryani, curry, sandwich, etc.) it asks "veg or non-veg?" with quick
-  tap buttons, then finishes the estimate.
-- `/skip` skips whatever meal is currently pending — e.g. wake up late, skip breakfast, and
-  immediately log lunch.
-- `/edit` lets you correct any meal you already logged today (overwrites that row in the sheet).
-- `/today`, `/week`, `/month` give you a text summary plus a calories+protein chart.
-- Meal logs are stored durably in Google Sheets (viewable/editable from your phone anytime).
-  A small local SQLite file just tracks "which meal is pending right now" — if it's ever wiped by
-  a redeploy, worst case today's flow just resets, your logged data is untouched.
+| Command | What it does |
+|---|---|
+| `/start`, `/help` | Register the first owner and show help; optional allowed chat restriction |
+| `/skip` | Skip the earliest pending meal and unlock the next meal |
+| `/edit` | Replace one of today's logged meals, including after clarification |
+| `/fix morning 650 25` | Set breakfast's final totals to 650 kcal and 25 g protein; update its cache |
+| `/today` | Today's text summary |
+| `/week`, `/month` | Last 7 / 30 days text summary and chart when data exists |
 
-## 1. Create the Telegram bot
+Only the registered owner can read reports or change records. Meals must be completed
+or skipped in order: morning, afternoon, night. Ambiguous foods get a Veg / Non-veg
+follow-up. Estimates are approximate and depend on the described portion.
 
-1. Message **@BotFather** on Telegram → `/newbot` → follow the prompts.
-2. Copy the token it gives you (looks like `123456789:AA...`).
+The cache is checked first. For uncached foods the AI resolves ambiguity, then usable
+API Ninjas nutrients take priority unless database calories are **strictly below**
+`NUTRITION_DB_MIN_RATIO × AI calories`. In that case the AI is used with the note
+“AI estimate: portion-adjusted.” At equality the database wins. Missing or placeholder
+nutrients fall back to AI; unusable AI and database results are not logged or cached.
+Raw calories are cached; the calorie multiplier applies once when saving/displaying.
+`/fix` accepts final calories and divides them by the multiplier for the cache.
 
-## 2. Get an NVIDIA NIM API key
+API Ninjas currently marks calories and protein as premium fields. The three live
+checks on 18 October 2026 returned premium-only placeholders, so this deployment can
+leave its optional key empty and use NVIDIA plus the cache. No paid upgrade is needed.
+Source: https://api-ninjas.com/api/nutrition
 
-1. Go to https://build.nvidia.com and sign in.
-2. Get an API key (starts with `nvapi-`) — NVIDIA gives free credits for their hosted models.
-3. Pick a solid instruction-following chat model, e.g. `meta/llama-3.3-70b-instruct` (already set
-   as the default in `.env.example`). You can browse other available chat models on the site and
-   swap `NVIDIA_MODEL` if you prefer another.
+## Configuration
 
-## 3. Set up the Google Sheet
+Copy `.env.example` to `.env` and edit it privately. Never paste credentials in chat,
+shell arguments or git. Google JSON must be on one line. Docker's env-file format uses
+literal values: do not wrap the JSON or other values in outer shell quotes.
 
-1. Create a new Google Sheet (any name). Grab the **Sheet ID** from its URL:
-   `https://docs.google.com/spreadsheets/d/`**`THIS_PART`**`/edit`
-2. In Google Cloud Console: create a project → enable the **Google Sheets API** → create a
-   **Service Account** → create a JSON key for it and download it.
-3. Open the downloaded JSON, find `client_email`, and **share your Google Sheet** with that email
-   address as an **Editor**.
-4. Paste the entire JSON file's contents as a single line into `GOOGLE_SERVICE_ACCOUNT_JSON` in
-   your `.env`.
+| Variable | Default / purpose |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Required, replacement token from BotFather |
+| `NVIDIA_API_KEY` | Required NVIDIA API key |
+| `NVIDIA_MODEL` | `nvidia/nemotron-3.5-lightning-30b-a3b` |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Required service-account JSON, one line |
+| `GOOGLE_SHEET_ID` | Required sheet ID; share sheet with the service account as Editor |
+| `GOOGLE_SHEET_TAB` | `Logs` |
+| `NUTRITION_API_KEY` | Optional; empty disables API Ninjas |
+| `CALORIE_MULTIPLIER` | `1.3`, finite and greater than zero |
+| `NUTRITION_DB_MIN_RATIO` | `0.6`, between 0 and 1 |
+| `ALLOWED_CHAT_ID` | Optional; restrict who can claim and use the bot |
+| `TIMEZONE` | `Asia/Kolkata` |
+| `REMINDER_MORNING` | `08:30` |
+| `REMINDER_AFTERNOON` | `14:00` |
+| `REMINDER_NIGHT` | `20:30` |
+| `DB_PATH` | `/data/bot_state.db` in Docker, `bot_state.db` otherwise |
 
-## 4. Run it locally first (recommended)
+Google Sheet column order is unchanged:
+`Date, Meal, Food, Category, Calories, Protein_g, LoggedAt`.
+Both Date and LoggedAt use the configured timezone.
+The NVIDIA model is listed at https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b/build .
+Thinking is disabled in the client request.
+
+## Azure setup
+
+Use an existing VM with capacity or a small permitted Ubuntu LTS/Debian VM. Check
+https://azure.microsoft.com/pricing/calculator/ for the region and size. SSH key
+authentication only; inbound TCP 22 restricted to your current public IP. No bot port
+is needed. Do not start polling until the old Railway/local instance is stopped.
+
+On the VM:
 
 ```bash
-cd telegram-calorie-bot
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+sudo apt update
+sudo apt install -y docker.io git
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"
+# Log out and in to apply Docker group membership.
+sudo mkdir -p /opt/calorie-bot
+sudo chown "$USER:$USER" /opt/calorie-bot
+git clone https://github.com/DhanushSS/Cllorie_bot.git /opt/calorie-bot
+cd /opt/calorie-bot
+# Select the reviewed deployment branch/commit before running.
 cp .env.example .env
-# now fill in .env with your real values
-python bot.py
+chmod 600 .env
+nano .env
+./deploy.sh
 ```
 
-Message your bot `/start` on Telegram. It should greet you and start scheduling reminders.
-Test `/skip`, `/edit`, `/today` etc. Once it feels right, deploy it so it survives your laptop
-being off.
+For a VM with about 1 GB RAM, add 1–2 GB swap if none exists. Never overwrite an
+existing swap file. Example for a new `/swapfile-calorie-bot`:
 
-## 5. Deploy to the cloud (always-on)
+```bash
+sudo fallocate -l 2G /swapfile-calorie-bot
+sudo chmod 600 /swapfile-calorie-bot
+sudo mkswap /swapfile-calorie-bot
+sudo swapon /swapfile-calorie-bot
+echo '/swapfile-calorie-bot none swap sw 0 0' | sudo tee -a /etc/fstab
+```
 
-This bot uses **polling** (not webhooks), so it just needs to be a long-running process — no
-public URL/port required. A couple of good free/cheap options:
+`deploy.sh` pulls the current branch with fast-forward only, builds before stopping
+the running bot, keeps its previous image, and recreates exactly one container with
+`--restart unless-stopped` and the named `calorie-bot-data` volume. Startup failures
+restore the previous image when one exists. The 12-second startup check is a process
+check, not proof of Telegram delivery; verify commands and the next reminder too.
 
-### Option A: Railway (simplest)
+## Operate / rollback
 
-1. Push this folder to a GitHub repo.
-2. On https://railway.app → New Project → Deploy from GitHub repo → pick your repo. Railway
-   auto-detects the `Dockerfile`.
-3. In the project's **Variables** tab, add every key from your `.env` (paste the JSON for
-   `GOOGLE_SERVICE_ACCOUNT_JSON` as one line, same as locally).
-4. Deploy. Check the **Deployments → Logs** tab for `Bot starting (polling)...`.
-5. Message `/start` to your bot from your phone — it now runs independent of your laptop.
+```bash
+cd /opt/calorie-bot
+./deploy.sh
+docker logs --tail 50 calorie-bot
+docker restart calorie-bot
+docker inspect -f '{{.RestartCount}}' calorie-bot
+```
 
-   Note: Railway's free trial credit runs out and then bills small usage-based amounts
-   (this bot is lightweight — should be low single-digit dollars a month at most). Check their
-   current pricing page before committing.
+Rollback (after at least one successful update):
 
-### Option B: Fly.io
+```bash
+docker stop -t 30 calorie-bot
+docker rm calorie-bot
+docker run -d --name calorie-bot --restart unless-stopped \
+  --env-file /opt/calorie-bot/.env -e DB_PATH=/data/bot_state.db \
+  -v calorie-bot-data:/data --log-opt max-size=10m --log-opt max-file=3 \
+  calorie-bot:previous
+```
 
-1. Install `flyctl`, run `fly launch` inside this folder (it'll detect the Dockerfile — say no to
-   a Postgres/Redis add-on, you don't need one).
-2. Set secrets: `fly secrets set TELEGRAM_BOT_TOKEN=... NVIDIA_API_KEY=... GOOGLE_SHEET_ID=... GOOGLE_SHEET_TAB=Logs TIMEZONE=Asia/Kolkata GOOGLE_SERVICE_ACCOUNT_JSON='...'`
-3. `fly deploy`. Fly's small free-tier VM allowance is normally enough for one always-on
-   lightweight worker like this — check their current free-tier terms, they do change.
+Never delete the data volume during redeployment. Stop before moving the SQLite file;
+use SQLite's backup API if copying a live local database. Ownership restored from the
+volume automatically reschedules all three reminders without another `/start`.
 
-### Option C: Render
+## Tests
 
-Use a **Background Worker** service (not a Web Service — web services on Render's free tier spin
-down on inactivity, which would silently kill your reminders). Point it at this repo with build
-command `pip install -r requirements.txt` and start command `python bot.py`, and add the same
-environment variables.
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m py_compile *.py tests/*.py
+.venv/bin/python -m pytest -q
+```
 
-## Files
-
-| File | Purpose |
-|---|---|
-| `bot.py` | Telegram handlers, scheduling, conversation flow |
-| `config.py` | Loads all settings from environment variables |
-| `db.py` | SQLite: tracks which meal is currently pending, per day |
-| `nvidia_client.py` | Calls the NVIDIA NIM API to estimate calories/protein, flags ambiguous dishes |
-| `sheets_client.py` | Reads/writes the Google Sheet |
-| `charts.py` | Builds the calorie/protein chart + text summaries for reports |
-
-## Customizing
-
-- Change reminder times: edit `REMINDER_MORNING` / `REMINDER_AFTERNOON` / `REMINDER_NIGHT` in
-  your env (24h `HH:MM`, in the `TIMEZONE` you set).
-- Change the estimation model: edit `NVIDIA_MODEL`.
-- Add a 4th meal slot (e.g. snacks): duplicate the `morning`/`Breakfast` pattern in
-  `config.MEALS`/`MEAL_LABELS` and `schedule_reminders`.
+Tests use temporary SQLite files and mocked external services. Live checks require
+separate credentials and explicit observations: phone commands, Sheet writes, restart,
+VM reboot and arrival of a scheduled reminder. Test passes alone do not prove those.

@@ -2,3 +2,16 @@
 bot_state.db
 __pycache__/
 *.pyc
+
+.env.*
+!.env.example
+.venv/
+venv/
+.pytest_cache/
+*.db
+*.db-*
+*.sqlite*
+*.pem
+*.key
+*service*account*.json
+.deploy.lock

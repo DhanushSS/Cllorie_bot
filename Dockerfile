@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# SQLite file for session state lives in the container's writable layer.
-# Meal logs themselves live in Google Sheets, so a redeploy losing this
-# file just re-opens today's earliest unlogged meal - harmless.
+# Durable state is supplied by a named volume at /data.
+ENV DB_PATH=/data/bot_state.db PYTHONUNBUFFERED=1
+RUN mkdir -p /data
 CMD ["python", "bot.py"]

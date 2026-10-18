@@ -1,4 +1,5 @@
 import os
+import math
 from datetime import time
 from zoneinfo import ZoneInfo
 
@@ -9,7 +10,7 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 NVIDIA_API_KEY = os.environ["NVIDIA_API_KEY"]
-NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")
+NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
@@ -28,6 +29,13 @@ NUTRITION_API_URL = "https://api.api-ninjas.com/v1/nutrition"
 # (cache, database, or AI estimate). Protein is left untouched. Override via env
 # var if you ever want a different factor without touching code.
 CALORIE_MULTIPLIER = float(os.environ.get("CALORIE_MULTIPLIER", "1.3"))
+
+NUTRITION_DB_MIN_RATIO = float(os.environ.get("NUTRITION_DB_MIN_RATIO", "0.6"))
+ALLOWED_CHAT_ID = os.environ.get("ALLOWED_CHAT_ID", "").strip()
+if not math.isfinite(CALORIE_MULTIPLIER) or CALORIE_MULTIPLIER <= 0:
+    raise ValueError("CALORIE_MULTIPLIER must be a finite positive number")
+if not 0 <= NUTRITION_DB_MIN_RATIO <= 1:
+    raise ValueError("NUTRITION_DB_MIN_RATIO must be between 0 and 1")
 
 TIMEZONE = ZoneInfo(os.environ.get("TIMEZONE", "Asia/Kolkata"))
 

@@ -131,7 +131,12 @@ This is on-demand research and explicit personal memory, not automatic training.
 Public-page retrieval blocks private/link-local addresses, pins validated IPs,
 revalidates redirects, and bounds page sizes, fetches and PDF extraction. Web text
 is untrusted data. PDF extraction runs separately with a deadline and a Linux memory
-limit. Search receives only the extracted restaurant, dish and country, not chat IDs
+limit. A public-page cache retains successfully read pages for up to 7 days (100 pages
+maximum), separately from meal records. Search still runs afresh. If a live read
+fails, a cached page can be used with its original read date and an explicit label;
+expired pages cannot establish a match. This cache can also be seeded with public
+pages fetched from another authorized environment when a publisher blocks the VM.
+Search receives only the extracted restaurant, dish and country, not chat IDs
 or the user's full conversation. `/test` uses this same research pipeline without
 writing meals, Sheets, aliases or the automatic food cache.
 

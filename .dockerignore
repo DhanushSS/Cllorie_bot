@@ -14,3 +14,5 @@ __pycache__
 *.key
 *service*account*.json
 .deploy.lock
+
+nutrition_sources

@@ -67,7 +67,9 @@ def published_totals(result, documents):
         return None
     urls = list(dict.fromkeys(doc['url'] for doc in cited))
     note = 'Published menu match; scaled to your portion. ' + ' '.join(portions)
-    note += '\nSources checked ' + cited[0]['retrieved_at'] + ':\n' + '\n'.join(urls[:3])
+    note += '\nSources (page-read dates):\n' + '\n'.join(f"{doc['retrieved_at']}: {doc['url']}" for doc in {d['url']: d for d in cited}.values())
+    if any(doc.get('cached') for doc in cited):
+        note += '\nUses a saved public page because live reading failed; saved pages expire after 7 days.'
     note += '\nRestaurant preparation can vary; ±10% accuracy is not guaranteed.'
     return dict(calories=round(calories, 1), protein_g=round(protein, 1), source_note=note)
 

@@ -14,6 +14,8 @@ import urllib3
 from bs4 import BeautifulSoup
 from ddgs import DDGS
 
+import source_cache
+
 MAX_BYTES = 5 * 1024 * 1024
 MAX_DOCS = 5
 
@@ -51,7 +53,7 @@ def fetch(url):
                 url = urljoin(url, response.headers.get('Location', ''))
                 continue
             if response.status != 200:
-                raise ValueError('Page unavailable')
+                raise ValueError(f'Page unavailable (HTTP {response.status})')
             if int(response.headers.get('Content-Length', '0')) > MAX_BYTES:
                 raise ValueError('Page too large')
             body = response.read(MAX_BYTES + 1, decode_content=True)
@@ -141,6 +143,10 @@ def research(restaurant, dish, country='India'):
     results, search_ok = [], False
     queries = [f'"{restaurant}" {country} nutrition pdf',
                f'"{restaurant}" {location or country} {dish} menu calories protein']
+    if country.casefold() == 'india':
+        # A public search engine on a foreign VM can rank US chain pages first.
+        # Always run the country-domain query, even if a global brand site exists.
+        queries.insert(0, f'"{restaurant}" site:in nutrition pdf')
     for query in queries:
         try:
             hits = DDGS(timeout=12).text(query, region='in-en', max_results=5, backend='bing')
@@ -153,13 +159,15 @@ def research(restaurant, dish, country='India'):
                 search_ok = True
             except Exception:
                 pass
-    if country.casefold() == 'india' and not any(source_class(hit.get('href', ''), restaurant) == 'primary_candidate' for hit in results):
-        try:
-            results.extend(DDGS(timeout=12).text(f'"{restaurant}" site:in nutrition', region='in-en', max_results=4, backend='bing'))
-        except Exception:
-            pass
-    brand_words = re.findall(r'[a-z0-9]{3,}', restaurant.lower())
-    results.sort(key=lambda hit: (not any(word in urlsplit(hit.get('href', '')).netloc.lower() for word in brand_words), '.pdf' not in hit.get('href', '').lower()))
+    def priority(hit):
+        url = hit.get('href', '')
+        host = urlsplit(url).hostname or ''
+        domestic = host.endswith('.in') or '/india/' in url.lower()
+        authority = source_class(url, restaurant)
+        return (country.casefold() == 'india' and not domestic,
+                {'primary_candidate': 0, 'merchant': 1, 'unverified_publisher': 2}[authority],
+                '.pdf' not in url.lower())
+    results.sort(key=priority)
     queue, seen, docs = [], set(), []
     for hit in results:
         url = hit.get('href', '').split('#')[0].rstrip('/')
@@ -172,17 +180,24 @@ def research(restaurant, dish, country='India'):
             continue
         seen.add(url)
         attempts += 1
+        retrieved_at = datetime.now(timezone.utc).date().isoformat()
+        cached = False
         try:
             final_url, kind, body = fetch(url)
             text, links = extract(final_url, kind, body)
-            # Prefer linked primary nutrition documents over another search result.
-            queue[0:0] = [link for link in links if link not in seen]
-            if len(text) < 100:
-                continue
-            docs.append(dict(id=f'S{len(docs)+1}', url=final_url, source_class=source_class(final_url, restaurant),
-                             text=excerpts(text, dish), retrieved_at=datetime.now(timezone.utc).date().isoformat()))
+            source_cache.save(final_url, text, links, retrieved_at)
         except Exception:
+            saved = source_cache.read(url)
+            if not saved:
+                continue
+            final_url, text, links = saved['url'], saved['text'], saved['links']
+            retrieved_at, cached = saved['retrieved_at'], True
+        # Do not crawl unrelated nutrition-directory navigation from calorie blogs.
+        queue[0:0] = [link for link in links if link not in seen and (source_class(final_url, restaurant) == 'primary_candidate' or source_class(link, restaurant) == 'primary_candidate')]
+        if len(text) < 100 or any(doc['url'].rstrip('/') == final_url.rstrip('/') for doc in docs):
             continue
+        docs.append(dict(id=f'S{len(docs)+1}', url=final_url, source_class=source_class(final_url, restaurant),
+                         text=excerpts(text, dish), retrieved_at=retrieved_at, cached=cached))
     return dict(documents=docs, search_ok=search_ok)
 
 

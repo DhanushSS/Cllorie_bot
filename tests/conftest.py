@@ -18,6 +18,7 @@ import db
 
 @pytest.fixture(autouse=True)
 def isolate(tmp_path, monkeypatch):
+    monkeypatch.setenv('NUTRITION_SOURCE_CACHE_DIR', str(tmp_path / 'public_sources'))
     monkeypatch.setattr(config, 'DB_PATH', str(tmp_path / 'data' / 'state.db'))
     monkeypatch.setattr(config, 'ALLOWED_CHAT_ID', '')
     monkeypatch.setattr(bot.sheets_client, 'append_entry', Mock())

@@ -155,3 +155,47 @@ def test_research_does_not_treat_search_snippets_as_evidence(monkeypatch):
     monkeypatch.setattr(web,'fetch',Mock(side_effect=ValueError('blocked')))
     result=web.research('Cafe','sandwich')
     assert result['search_ok'] and result['documents']==[]
+
+
+def test_india_search_always_uses_country_domain_even_with_global_brand(monkeypatch):
+    engine=Mock();engine.text.return_value=[dict(href='https://www.tacobell.com/nutrition')]
+    monkeypatch.setattr(web,'DDGS',Mock(return_value=engine))
+    monkeypatch.setattr(web,'fetch',Mock(side_effect=ValueError('blocked')))
+    web.research('Taco Bell','taco','India')
+    queries=[call.args[0] for call in engine.text.call_args_list]
+    assert any('site:in' in query for query in queries)
+
+
+def test_domestic_primary_sources_rank_before_us_pdf(monkeypatch):
+    engine=Mock();engine.text.return_value=[dict(href='https://www.tacobell.com/us.pdf'),dict(href='https://www.tacobell.co.in/nutrition')]
+    monkeypatch.setattr(web,'DDGS',Mock(return_value=engine))
+    fetch=Mock(side_effect=ValueError('blocked'));monkeypatch.setattr(web,'fetch',fetch)
+    web.research('Taco Bell','taco','India')
+    assert fetch.call_args_list[0].args[0]=='https://www.tacobell.co.in/nutrition'
+
+
+def test_cached_source_fallback_preserves_original_date(monkeypatch):
+    import source_cache
+    url='https://www.tacobell.co.in/menu.pdf'
+    source_cache.save(url,'Nutrition facts '+('food calories protein ' * 10),[],'2026-10-18')
+    engine=Mock();engine.text.return_value=[dict(href=url)]
+    monkeypatch.setattr(web,'DDGS',Mock(return_value=engine))
+    monkeypatch.setattr(web,'fetch',Mock(side_effect=ValueError('403')))
+    result=web.research('Taco Bell','taco','India')
+    assert result['documents'][0]['cached'] is True
+    assert result['documents'][0]['retrieved_at']=='2026-10-18'
+    engine.text.assert_called()  # A saved page never skips fresh searching.
+
+
+def test_expired_public_page_is_not_reused(monkeypatch):
+    import source_cache
+    url='https://example.com/nutrition'
+    source_cache.save(url,'nutrition '*20,[],'2026-10-18')
+    now=source_cache.time.time()
+    monkeypatch.setattr(source_cache.time,'time',lambda:now+source_cache.MAX_AGE_SECONDS+1)
+    assert source_cache.read(url) is None
+
+
+def test_cached_published_match_discloses_date_and_fallback():
+    note=nr.published_totals(RESULT,[dict(DOC,cached=True,retrieved_at='2026-10-18')])['source_note']
+    assert '2026-10-18' in note and 'saved public page' in note

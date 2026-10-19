@@ -199,3 +199,14 @@ def test_expired_public_page_is_not_reused(monkeypatch):
 def test_cached_published_match_discloses_date_and_fallback():
     note=nr.published_totals(RESULT,[dict(DOC,cached=True,retrieved_at='2026-10-18')])['source_note']
     assert '2026-10-18' in note and 'saved public page' in note
+
+
+def test_pdf_spacing_differences_do_not_discard_exact_numeric_evidence():
+    doc=dict(DOC,text=DOC['text'].replace('Margherita 600 20','Margherita600 20'))
+    assert nr.published_totals(RESULT,[doc])['calories']==300
+
+
+def test_explicit_us_pdf_is_not_used_for_india():
+    assert web.foreign_market('https://cache.dominos.com/assets/market/US/en/menu.pdf','India')
+    assert not web.foreign_market('https://www.dominos.co.in/nutrition.pdf','India')
+    assert not web.foreign_market('https://cache.dominos.com/assets/market/US/en/menu.pdf','USA')

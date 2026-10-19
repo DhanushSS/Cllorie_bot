@@ -129,6 +129,13 @@ def source_class(url, restaurant):
     return 'primary_candidate' if label in candidates and len(label) >= 3 else 'unverified_publisher'
 
 
+def foreign_market(url, country):
+    if country.casefold() != 'india':
+        return False
+    host = (urlsplit(url).hostname or '').lower()
+    return host.endswith(('.us', '.co.uk', '.com.au', '.ca', '.co.nz')) or bool(re.search(r'/market/(?:us|uk|au|ca)/|/en-(?:us|gb|au|ca)/', url, re.I))
+
+
 def research(restaurant, dish, country='India'):
     """Search afresh for arbitrary restaurant names; never use a brand allowlist."""
     restaurant = re.sub(r'[^\w .&\'-]', ' ', restaurant)[:100]
@@ -176,7 +183,7 @@ def research(restaurant, dish, country='India'):
     attempts = 0
     while queue and len(docs) < MAX_DOCS and attempts < 9 and time.monotonic() - started < 90:
         url = queue.pop(0)
-        if url in seen:
+        if url in seen or foreign_market(url, country):
             continue
         seen.add(url)
         attempts += 1

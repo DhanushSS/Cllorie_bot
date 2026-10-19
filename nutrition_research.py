@@ -2,6 +2,7 @@
 import logging
 import math
 import re
+import unicodedata
 
 import nvidia_client
 import web_nutrition
@@ -11,6 +12,12 @@ logger = logging.getLogger('calorie-bot.research')
 
 def normalized(value):
     return re.sub(r'\s+', ' ', str(value)).strip().casefold()
+
+
+def compact(value):
+    # PDF extraction can join a row number to the item name or split words.
+    # Ignore typography/whitespace only; content and numeric checks still apply.
+    return re.sub(r'\s+', '', unicodedata.normalize('NFKC', str(value))).casefold()
 
 
 def number(value):
@@ -42,9 +49,9 @@ def published_totals(result, documents):
             doc = sources[item['source_id']]
             if doc.get('source_class') not in ('primary_candidate', 'merchant'):
                 return None
-            text = normalized(doc['text'])
+            text = compact(doc['text'])
             for key in ('row_quote', 'header_quote', 'serving_quote'):
-                quote = normalized(item[key])
+                quote = compact(item[key])
                 if len(quote) < 4 or len(quote) > 1800 or quote not in text:
                     return None
             header = normalized(item['header_quote'])
@@ -54,7 +61,7 @@ def published_totals(result, documents):
             cal, pro, factor = number(item['calories']), number(item['protein_g']), number(item['portion_factor'])
             if cal not in row_numbers or pro not in row_numbers or not 0 < factor <= 20 or not 0 < cal <= 15000 or pro > 1000 or pro * 4 > cal * 1.1:
                 return None
-            if not normalized(item.get('item')) or normalized(item['item']) not in normalized(item['row_quote']):
+            if not normalized(item.get('item')) or compact(item['item']) not in compact(item['row_quote']):
                 return None
             explanation = str(item.get('portion_explanation', '')).strip()
             if not explanation:
@@ -89,7 +96,8 @@ def estimate(meal_label, food_text, initial=None):
     candidate = result
     if docs:
         try:
-            candidate = nvidia_client.analyze_sources(meal_label, food_text, restaurant, country, docs)
+            primary_docs = [doc for doc in docs if doc.get('source_class') in ('primary_candidate', 'merchant')]
+            candidate = nvidia_client.analyze_sources(meal_label, food_text, restaurant, country, primary_docs or docs)
             if candidate.get('is_food') is not True:
                 candidate = result
         except Exception as exc:

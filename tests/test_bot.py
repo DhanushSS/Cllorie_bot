@@ -206,7 +206,7 @@ def test_clarification_does_not_log_early(monkeypatch,ctx):
     assert db.get_pending_clarification('42')['date']=='2026-10-18'
     assert db.earliest_pending_meal('42','2026-10-18')=='morning'
     buttons=ctx.bot.send_message.call_args.kwargs['reply_markup'].inline_keyboard
-    assert [b.text for row in buttons for b in row]==['Veg','Non-veg','Cancel']
+    assert [b.text for row in buttons for b in row]==['Chicken','Mutton','Veg','Egg','Cancel']
 
 
 def test_provider_timeout_keeps_meal_pending(monkeypatch,ctx):
@@ -242,7 +242,7 @@ def test_estimation_does_not_block_event_loop(monkeypatch,ctx):
     run(check())
 
 
-def test_estimator_uses_fast_model_settings(monkeypatch):
+def test_estimator_uses_reasoning_model_settings(monkeypatch):
     import importlib
     module=importlib.reload(nvidia_client)
     create=Mock(return_value=SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"needs_clarification":false,"calories":105,"protein_g":1.3}'))]))
@@ -250,7 +250,7 @@ def test_estimator_uses_fast_model_settings(monkeypatch):
     monkeypatch.setattr(config,'NVIDIA_MODEL','openai/gpt-oss-20b')
     result=module.estimate('Breakfast','one banana')
     assert result['calories']==105
-    assert create.call_args.kwargs['extra_body']=={'reasoning_effort':'low'}
+    assert create.call_args.kwargs['extra_body']=={'reasoning_effort':'high'}
 
 
 @pytest.mark.parametrize('text',['hi','Hi!','hello','thanks','good morning','how are you','Hi. It is veg.'])

@@ -23,6 +23,8 @@ from telegram.ext import (
 
 import charts
 import conversation
+import food_rules
+import restaurant_nutrition
 import config
 import db
 import nutrition_api
@@ -287,7 +289,7 @@ async def finalize_entry(
     cached = db.get_cached_food(cache_key)
     # Re-check older automatic guesses under the new portion-validation policy.
     if cached and cached.get("notes") != "manually corrected" and (
-            cached.get("policy_version", 1) < 2 or conversation.requires_portion(food_text)):
+            cached.get("policy_version", 1) < 3 or restaurant_nutrition.brand(food_text) or conversation.requires_portion(food_text)):
         cached = None
     if cached:
         calories = cached["calories"]
@@ -295,9 +297,14 @@ async def finalize_entry(
         category = cached["category"]
         source_note = cached["notes"]
     else:
+        menu_result = restaurant_nutrition.resolve(food_text, today_local())
+        if menu_result is not None:
+            result = menu_result
+        elif result is None:
+            result = food_rules.biryani_preflight(food_text)
         if result is None:
             await context.bot.send_chat_action(chat_id=int(chat_id), action="typing")
-            await context.bot.send_message(chat_id=int(chat_id), text=("Test only — checking that food and portion…" if test_mode else "Got it — checking the food and portion."))
+            await context.bot.send_message(chat_id=int(chat_id), text=("Test only — checking that food and portion…" if test_mode else "Got it — checking the food, portion and recipe. I may take a little longer to work this out."))
             try:
                 result = await asyncio.to_thread(nvidia_client.estimate, label, food_text)
             except (APIConnectionError, APIStatusError) as exc:
@@ -314,7 +321,17 @@ async def finalize_entry(
                                            reply_markup=conversation.menu_keyboard())
             return
 
-        if conversation.requires_portion(food_text) and (
+        if menu_result is None and result.get('is_food') is True and food_rules.category(food_text):
+            result['category'] = food_rules.category(food_text)
+        if menu_result is None and food_rules.is_redundant_diet_question(result, food_text):
+            # Never show a diet question that contradicts the named ingredient.
+            # A failed semantic interpretation stays unsaved rather than receiving
+            # an invented calorie value.
+            result = food_rules.question(
+                "I've got the food type. Tell me the amount and preparation in one message, like ‘300 g cooked chicken biryani’. Your meal hasn't been saved.",
+                category_value=food_rules.category(food_text))
+
+        if menu_result is None and conversation.requires_portion(food_text) and (
                 not result["needs_clarification"] or conversation.diet_is_stated(food_text)):
             # A model response cannot supply a portion the user never gave us.
             result = dict(result, needs_clarification=True, clarification_kind="portion",
@@ -337,12 +354,16 @@ async def finalize_entry(
             await context.bot.send_message(chat_id=int(chat_id), text=("Test only — " if test_mode else "") + question, reply_markup=kb)
             return
 
-        db_result = await asyncio.to_thread(nutrition_api.lookup, food_text)
+        # Generic lookup must never overwrite an exact restaurant menu match.
+        db_result = None if menu_result or restaurant_nutrition.brand(food_text) else await asyncio.to_thread(nutrition_api.lookup, food_text)
         ai_cal = nutrition_api.nutrient(result.get("calories"))
         ai_pro = nutrition_api.nutrient(result.get("protein_g"))
         valid_ai = ai_cal is not None and ai_cal > 0 and ai_pro is not None
         category = result.get("category") or "unknown"
-        if db_result and not (valid_ai and db_result[0] < config.NUTRITION_DB_MIN_RATIO * ai_cal):
+        if menu_result and valid_ai:
+            calories, protein = ai_cal, ai_pro
+            source_note = menu_result['source_note']
+        elif db_result and not (valid_ai and db_result[0] < config.NUTRITION_DB_MIN_RATIO * ai_cal):
             calories, protein = db_result
             source_note = "from nutrition database"
         elif valid_ai:
@@ -350,6 +371,16 @@ async def finalize_entry(
             source_note = "AI estimate: portion-adjusted" if db_result else "AI estimate"
             if result.get("notes"):
                 source_note += ": " + str(result["notes"])
+            if restaurant_nutrition.brand(food_text):
+                source_note += " No matching published menu value for this exact variant/portion; not verified brand nutrition."
+            for field, label, unit in [('calorie_range', 'Likely calorie range', 'kcal'), ('protein_range', 'Likely protein range', 'g')]:
+                bounds = result.get(field)
+                if isinstance(bounds, list) and len(bounds) == 2:
+                    low, high = (nutrition_api.nutrient(x) for x in bounds)
+                    center = calories if field == 'calorie_range' else protein
+                    if low is not None and high is not None and low <= center <= high:
+                        source_note += f"\n{label}: {low:g}–{high:g} {unit}."
+
         else:
             await context.bot.send_message(
                 chat_id=int(chat_id),

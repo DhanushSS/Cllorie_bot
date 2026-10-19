@@ -256,10 +256,10 @@ def test_factor_migration_preserves_manual_totals_and_history():
 
 def test_followup_preserves_answered_question(monkeypatch,update,ctx):
     day=bot.today_local().isoformat()
-    db.set_pending_clarification('42','morning','Veg or non-veg?','biryani',day,False,['Veg','Non-veg'],'diet')
+    db.set_pending_clarification('42','morning','Veg or non-veg?','1 cup biryani',day,False,['Veg','Non-veg'],'diet')
     run(bot.on_answer(callback(update,'answer:log:diet:0'),ctx))
     description=nvidia_client.estimate.call_args.args[1]
-    assert description=='biryani. Answered question: Veg or non-veg? Clarification: Veg'
+    assert description=='1 cup biryani. Answered question: Veg or non-veg? Clarification: Veg'
     assert 'ALREADY been answered' in nvidia_client.SYSTEM_PROMPT
 
 
@@ -274,7 +274,8 @@ def test_model_cannot_invent_missing_portion(food,ctx):
     run(bot.finalize_entry('42',bot.today_local().isoformat(),'morning',food,ctx,False))
     sheets_client.append_entry.assert_not_called()
     assert db.get_cached_food(food) is None
-    assert 'how much' in db.get_pending_clarification('42')['question']
+    question=db.get_pending_clarification('42')['question'].lower()
+    assert 'how much' in question or food=='biryani' and 'which biryani' in question
 
 
 def test_repeated_diet_question_moves_to_missing_portion(monkeypatch,ctx):

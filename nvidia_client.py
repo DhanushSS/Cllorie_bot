@@ -5,10 +5,12 @@ import re
 from openai import OpenAI
 
 import config
+import food_rules
+import restaurant_nutrition
 
 logger = logging.getLogger("calorie-bot.nvidia")
 
-client = OpenAI(base_url=config.NVIDIA_BASE_URL, api_key=config.NVIDIA_API_KEY, timeout=120, max_retries=0)
+client = OpenAI(base_url=config.NVIDIA_BASE_URL, api_key=config.NVIDIA_API_KEY, timeout=config.NVIDIA_TIMEOUT_SECONDS, max_retries=0)
 
 SYSTEM_PROMPT = """You estimate calories and protein for a food diary, often Indian meals.
 Read everyday texting naturally: casual grammar, common typos, abbreviations,
@@ -25,6 +27,8 @@ Return exactly one JSON object:
   "calories": number or null,
   "protein_g": number or null,
   "category": "veg" or "non-veg" or "unknown",
+  "calorie_range": [low, high] or null,
+  "protein_range": [low, high] or null,
   "notes": "short plain sentence explaining the portion and main uncertainty"
 }
 Rules:
@@ -57,7 +61,26 @@ Rules:
   biryani. Ask quantity next, not whether it contains egg/chicken or what kind of
   vegetables. A clear amount for that veg biryani completes the estimate. If recipe
   details are unknown, use an ordinary mixed-vegetable recipe and state that assumption.
-- No markdown fences, reasoning traces or extra prose. Detailed thinking off.
+- Chicken, chkn, mutton, fish, prawns and egg already specify non-veg. Never ask
+  veg/non-veg again for these. Paneer/vegetarian and plant-based substitutes are veg.
+  Use recipe meaning, including negation ('without chicken') and substitutions.
+- "One chicken biryani" means one item/order, NOT one cup or a 250 g serving.
+  If the amount eaten is unclear ask full restaurant order, half order or weight.
+  A full restaurant order can feed more than one person. Never silently equate it
+  with a cup. For an unweighed full/half restaurant order, give a broad honest range
+  and state the assumed cooked weight. Do not force a universal calorie minimum.
+- Brand names are not nutrition facts. The application supplies published menu
+  values separately. If asked here about Meghana, Nandhana or another brand, do not
+  claim official nutrition or invent a source. State that it is a recipe estimate
+  without a matching published value. Account for restaurant preparation.
+- Include rice, edible meat and oil/ghee that are normally part of the named cooked
+  dish. 'No additional sides' does not mean fat-free rice. Avoid double-counting
+  raw/cooked rice or bones as edible chicken. Do not add unmentioned extra sides.
+- When estimating (not clarifying), include realistic calorie_range and protein_range
+  covering portion/recipe uncertainty. The central total must lie inside its range.
+  Explain the assumed edible portion briefly. Keep the answer natural and concise.
+- Reason carefully internally, then return only the final JSON object. No reasoning
+  traces, markdown fences or extra prose in the final content.
 """
 
 
@@ -119,7 +142,10 @@ def _fallback(reason: str) -> dict:
 
 def estimate(meal_label: str, food_text: str) -> dict:
     """Ask the NVIDIA-hosted LLM to estimate calories/protein, or flag ambiguity."""
-    user_msg = f"Meal: {meal_label}\nDescription: {food_text}"
+    facts = {"explicit_category": food_rules.category(food_text),
+             "recognized_brand": restaurant_nutrition.brand(food_text),
+             "published_nutrition_provided": False}
+    user_msg = f"Meal: {meal_label}\nKnown facts: {json.dumps(facts)}\nDescription: {food_text}"
 
     resp = client.chat.completions.create(
         model=config.NVIDIA_MODEL,
@@ -128,21 +154,26 @@ def estimate(meal_label: str, food_text: str) -> dict:
             {"role": "user", "content": user_msg},
         ],
         temperature=0.2,
-        max_tokens=500,
-        extra_body=({"reasoning_effort": "low"} if config.NVIDIA_MODEL.startswith("openai/gpt-oss")
-                    else {"chat_template_kwargs": {"enable_thinking": False}}),
+        max_tokens=config.NVIDIA_MAX_TOKENS,
+        extra_body=({"reasoning_effort": "high"} if config.NVIDIA_MODEL.startswith("openai/gpt-oss")
+                    else {"chat_template_kwargs": {"enable_thinking": config.NVIDIA_THINKING}}),
     )
+    if getattr(resp.choices[0], "finish_reason", None) == "length":
+        return _fallback("reasoning/output budget exhausted")
     raw = resp.choices[0].message.content or ""
-    logger.info("NVIDIA raw response: %r", raw)
+    logger.info("Nutrition response received from %s", config.NVIDIA_MODEL)
 
     try:
         data = _extract_json(raw)
     except Exception as e:
-        logger.warning("Failed to parse NVIDIA response as JSON (%s). Raw: %r", e, raw)
+        logger.warning("Failed to parse nutrition response (%s)", type(e).__name__)
         data = _fallback(str(e))
 
     if not isinstance(data, dict):
         data = _fallback("response was not an object")
+    explicit_category = food_rules.category(food_text)
+    if data.get("is_food") is True and explicit_category:
+        data["category"] = explicit_category
     data.setdefault("intent", "food" if data.get("is_food") is True else "unknown")
     data.setdefault("clarification_kind", None)
     data.setdefault("clarification_options", [])

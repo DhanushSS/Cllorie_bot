@@ -49,7 +49,10 @@ literal values: do not wrap the JSON or other values in outer shell quotes.
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Required, replacement token from BotFather |
 | `NVIDIA_API_KEY` | Required NVIDIA API key |
-| `NVIDIA_MODEL` | `nvidia/nemotron-3.5-lightning-30b-a3b` |
+| `NVIDIA_THINKING` | `true`, reasoning enabled |
+| `NVIDIA_TIMEOUT_SECONDS` | `240`, request timeout |
+| `NVIDIA_MAX_TOKENS` | `4096`, room for reasoning and final JSON |
+| `NVIDIA_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b` |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Required service-account JSON, one line |
 | `GOOGLE_SHEET_ID` | Required sheet ID; share sheet with the service account as Editor |
 | `GOOGLE_SHEET_TAB` | `Logs` |
@@ -66,8 +69,8 @@ literal values: do not wrap the JSON or other values in outer shell quotes.
 Google Sheet column order is unchanged:
 `Date, Meal, Food, Category, Calories, Protein_g, LoggedAt`.
 Both Date and LoggedAt use the configured timezone.
-The default is Nemotron 3.5 Lightning through NVIDIA's API, with thinking disabled
-and a 120-second timeout. The owner prefers careful handling over low latency.
+The default is Nemotron 3 Ultra 550B through NVIDIA's API, with thinking enabled
+and a 240-second timeout. Truncated output is rejected rather than partially parsed. The owner prefers careful handling over low latency.
 A greeting is handled locally and never sent for estimation or cached as food.
 For other uncached messages the model must explicitly confirm `is_food=true` before
 any estimate or dietary clarification is accepted. Missing/false classification,
@@ -93,6 +96,34 @@ preserves previously corrected final calories in the cache when changing the fac
 Multi-user access is not enabled. Removing the owner guard alone would expose the
 shared Sheet and mix records. Before inviting users, reports, corrections, caches,
 exports and reminders need per-user isolation, admission controls and load testing.
+
+## Restaurant nutrition and reasoning
+
+Explicit chicken, mutton, fish and egg descriptions resolve as non-veg; paneer and
+plant-based substitutes are handled appropriately. A biryani order count is not
+assumed to mean one cup. The bot asks for the amount eaten before estimating.
+
+`restaurant_nutrition.py` holds eight dated menu entries for Meghana and Nandhana.
+Published values are matched to the actual variant and fraction of a listed order;
+Meghana without a variant and Nandhana chicken without its style require a choice.
+The source URL, check date, serving description and full-item assumption appear
+with the result. The source does not itemize side nutrition. Different sides,
+extra items, weights without a matching weight basis, bucket/high-protein products
+and unsupported variants use an explicitly labelled recipe estimate instead.
+There is no general live restaurant-search API connected to this bot.
+
+Sources checked 19 October 2026:
+- [Meghana, Residency Road](https://www.swiggy.com/city/bangalore/meghana-foods-residency-road-rest3241?query=Chicken)
+- [Nandhana, Banashankari](https://www.swiggy.com/city/bangalore/nandhana-palace-beml-layout-5th-stage-banashankari-rest389325)
+
+Menu facts expire after 90 days and then stop being used as published values until
+reviewed. They are merchant menu declarations, not independently measured nutrition.
+For other foods, the larger reasoning model provides an estimate, assumed portion
+and uncertainty range when available. Generic database values cannot overwrite a
+matched restaurant menu entry. Automatic caches from older policies are rechecked;
+user-entered corrections and historical logs are preserved. Named usuals retain
+explicit restaurant, variant and portion details. This is persisted user memory,
+not automatic model training on guesses.
 
 ## Azure setup
 

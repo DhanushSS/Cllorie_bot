@@ -162,10 +162,10 @@ def set_cached_food(food_key: str, calories: float, protein: float, category: st
     conn = _conn()
     conn.execute(
         """INSERT INTO food_cache(food_key, calories, protein, category, notes, policy_version)
-        VALUES(?,?,?,?,?,2)
+        VALUES(?,?,?,?,?,3)
         ON CONFLICT(food_key) DO UPDATE SET
             calories=excluded.calories, protein=excluded.protein,
-            category=excluded.category, notes=excluded.notes, policy_version=2""",
+            category=excluded.category, notes=excluded.notes, policy_version=3""",
         (food_key, calories, protein, category, notes),
     )
     conn.commit()

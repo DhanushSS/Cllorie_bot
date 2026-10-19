@@ -10,7 +10,10 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 NVIDIA_API_KEY = os.environ["NVIDIA_API_KEY"]
-NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
+NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")
+NVIDIA_TIMEOUT_SECONDS = float(os.environ.get("NVIDIA_TIMEOUT_SECONDS", "240"))
+NVIDIA_MAX_TOKENS = int(os.environ.get("NVIDIA_MAX_TOKENS", "4096"))
+NVIDIA_THINKING = os.environ.get("NVIDIA_THINKING", "true").lower() == "true"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]

@@ -100,6 +100,7 @@ def requires_portion(text):
     variable_food = re.search(r'\b(?:biryani|rice|curry|dal|dhal|sambar|pasta|noodles|soup|chicken|fish|paneer|idlis?|chapatis?|rotis?)\b', user_text, re.I)
     quantity = re.search(r'\b\d+(?:\.\d+)?\s*(?:g|gm|grams?|kg|ml|l|cups?|bowls?|plates?|pieces?|servings?|idlis?|chapatis?|rotis?|bananas?|eggs?)\b|\b(?:one|two|three|four|five|six|half|quarter)\b|\b(?:a|an)\s+(?:small |medium |large )?(?:bowl|cup|plate|piece|serving)\b', user_text, re.I)
     # Accept standalone counts after a clarification as well.
+    quantity = quantity or re.search(r'\b(?:full|whole|half|quarter)\s+(?:restaurant\s+|listed\s+)?(?:order|box|pack|portion|plate)\b', user_text, re.I)
     quantity = quantity or re.search(r'Clarification:\s*\d+(?:\.\d+)?\s*$', text, re.I)
     return bool(variable_food and not quantity)
 

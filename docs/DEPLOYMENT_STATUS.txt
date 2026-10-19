@@ -1,0 +1,45 @@
+DEPLOYMENT AND VERIFICATION — 19 October 2026
+
+Deployed application revision: 8031baf
+Hosting: existing Azure VM, Docker with a persistent data volume and automatic restart.
+Model: NVIDIA Nemotron 3 Ultra, thinking enabled.
+Calorie multiplier: 1.0. Historical meal records are preserved.
+
+Restaurant lookup
+- Any restaurant name can be recognized and researched; there is no restaurant allowlist.
+- India is the default market, with explicit India-domain queries and country checks.
+- Pages and linked nutrition PDFs are read; search snippets are not nutrition evidence.
+- Published matches require row/header/serving evidence and a second reasoning check.
+- Unverified nutrition blogs cannot establish a published menu match.
+- Public-page cache: at most 100 pages, 7-day expiry, original read date shown when used.
+- Missing or conflicting evidence produces a labelled estimate or clarification.
+- Website blocks, missing menus, model errors and portion variation prevent a guaranteed
+  10 percent error tolerance. This release has no measured population accuracy benchmark.
+
+Verification
+- 205 automated checks pass locally and inside the final Azure image.
+- Telegram authentication and /test command registration were read back.
+- Owner state, persistent storage and reminders were retained.
+- Live diagnostic exercised the actual /test handler with temporary meal state and
+  prohibited Sheet/meal/cache writes; it did not send a diagnostic to a real chat.
+- Final live test: 'Taco Bell India, one full Crunchy Wheat Taco Veg' returned
+  255.5 kcal and 4.3 g protein, scaled from the published 108 g serving.
+  Source: https://www.tacobell.co.in/pub/media/pdf/nutritional-info-new.pdf
+  Public page read: 19 October 2026. The reply disclosed cached-source use because
+  the publisher blocked direct Azure requests. This run took about 200 seconds.
+- Development probes also covered Pizza Hut, KFC, Domino's and Truffles. Outcomes
+  included published matches, estimates and clarification questions. This is not
+  a guarantee that every restaurant or dish has accessible published nutrition.
+- Actual phone rendering/delivery and the next scheduled reminder still need observation.
+
+Operations
+Use deploy.sh on the configured server. It builds the checked-out revision, retains
+persistent data, performs startup checks and restores the previous image on failure.
+Do not start a second polling instance with the same Telegram token.
+Credentials belong in the private .env file and are excluded from Git and Docker builds.
+Personal meal databases, public-page cache files and source snapshots are not committed.
+The repository default branch is not automatically changed by deployment.
+
+Multi-user readiness
+The bot remains owner-only. See MULTI_USER_ASSESSMENT.txt before enabling invitations.
+Explicit usuals/corrections are saved personal memory; this is not automatic model training.

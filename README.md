@@ -220,3 +220,10 @@ python3 -m venv .venv
 Tests use temporary SQLite files and mocked external services. Live checks require
 separate credentials and explicit observations: phone commands, Sheet writes, restart,
 VM reboot and arrival of a scheduled reminder. Test passes alone do not prove those.
+
+## Verification and next steps
+
+See [deployment and verification status](docs/DEPLOYMENT_STATUS.txt) for the deployed
+revision, 205 passing checks, live-source test and remaining limits.
+The [multi-user assessment](docs/MULTI_USER_ASSESSMENT.txt) describes the isolation
+work needed before inviting other people. Private credentials and data stay off GitHub.

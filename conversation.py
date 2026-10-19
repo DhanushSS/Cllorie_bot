@@ -88,3 +88,22 @@ def result_keyboard(test_mode=False, memory_id=None):
         [InlineKeyboardButton('Correct totals', callback_data='nav_fix'),
          InlineKeyboardButton('Remember this meal', callback_data=f'remember:{memory_id}')],
     ])
+
+
+def requires_portion(text):
+    """Conservative check for common dishes whose serving size varies widely.
+
+    Ignore the bot's question: only user descriptions and answers supply amounts.
+    This supplements, rather than replaces, the model's broader food validation.
+    """
+    user_text = re.sub(r'Answered question:.*?Clarification:', '', text, flags=re.I | re.S)
+    variable_food = re.search(r'\b(?:biryani|rice|curry|dal|dhal|sambar|pasta|noodles|soup|chicken|fish|paneer|idlis?|chapatis?|rotis?)\b', user_text, re.I)
+    quantity = re.search(r'\b\d+(?:\.\d+)?\s*(?:g|gm|grams?|kg|ml|l|cups?|bowls?|plates?|pieces?|servings?|idlis?|chapatis?|rotis?|bananas?|eggs?)\b|\b(?:one|two|three|four|five|six|half|quarter)\b|\b(?:a|an)\s+(?:small |medium |large )?(?:bowl|cup|plate|piece|serving)\b', user_text, re.I)
+    # Accept standalone counts after a clarification as well.
+    quantity = quantity or re.search(r'Clarification:\s*\d+(?:\.\d+)?\s*$', text, re.I)
+    return bool(variable_food and not quantity)
+
+
+def diet_is_stated(text):
+    user_text = re.sub(r'Answered question:.*?Clarification:', '', text, flags=re.I | re.S)
+    return bool(re.search(r'\b(?:veg|vegetarian|non[ -]?veg|chicken|mutton|fish|egg|paneer)\b', user_text, re.I))

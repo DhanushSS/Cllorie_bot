@@ -267,3 +267,26 @@ def test_greeting_cannot_become_food_through_answered_question(ctx):
     run(bot.finalize_entry('42',bot.today_local().isoformat(),'morning','Hi. Answered question: Veg or non-veg? Clarification: Veg',ctx,False))
     nvidia_client.estimate.assert_not_called()
     sheets_client.append_entry.assert_not_called()
+
+
+@pytest.mark.parametrize('food',['biryani','veg biryani','rice','chicken curry','dal','idli'])
+def test_model_cannot_invent_missing_portion(food,ctx):
+    run(bot.finalize_entry('42',bot.today_local().isoformat(),'morning',food,ctx,False))
+    sheets_client.append_entry.assert_not_called()
+    assert db.get_cached_food(food) is None
+    assert 'how much' in db.get_pending_clarification('42')['question']
+
+
+def test_repeated_diet_question_moves_to_missing_portion(monkeypatch,ctx):
+    monkeypatch.setattr(nvidia_client,'estimate',Mock(return_value={'is_food':True,'needs_clarification':True,'clarification_kind':'food','clarification_question':'Veg or non-veg?','clarification_options':['Veg','Non-veg']}))
+    food='biryani. Answered question: Veg or non-veg? Clarification: Veg'
+    run(bot.finalize_entry('42',bot.today_local().isoformat(),'morning',food,ctx,False))
+    p=db.get_pending_clarification('42')
+    assert 'how much' in p['question']
+    assert p['options']==[]
+    sheets_client.append_entry.assert_not_called()
+
+
+def test_question_example_is_not_a_user_supplied_portion():
+    assert conversation.requires_portion('rice. Answered question: Was it 1 cup or 2 cups? Clarification: not sure')
+    assert not conversation.requires_portion('rice. Answered question: How much? Clarification: 1 cup')

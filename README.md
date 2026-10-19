@@ -21,7 +21,10 @@ clarifications and raw food estimates across deployments. Default timezone is As
 
 Only the registered owner can read reports or change records. Meals must be completed
 or skipped in order: morning, afternoon, night. Ambiguous foods get a relevant type or portion
-question, with answer buttons when available. Estimates are approximate and depend on the described portion.
+question, with answer buttons when available. A separate portion check prevents
+common variable-serving dishes (rice, biryani, curry, dal and others) from being
+saved on an automatic guess when the user has supplied no recognized amount.
+It ignores amounts appearing only in the bot's own questions. Estimates are approximate and depend on the described portion.
 
 The cache is checked first. For uncached foods the AI resolves ambiguity, then usable
 API Ninjas nutrients take priority unless database calories are **strictly below**

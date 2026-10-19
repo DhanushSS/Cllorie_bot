@@ -286,7 +286,8 @@ async def finalize_entry(
     cache_key = db.food_cache_key(food_text)
     cached = db.get_cached_food(cache_key)
     # Re-check older automatic guesses under the new portion-validation policy.
-    if cached and cached.get("policy_version", 1) < 2 and cached.get("notes") != "manually corrected":
+    if cached and cached.get("notes") != "manually corrected" and (
+            cached.get("policy_version", 1) < 2 or conversation.requires_portion(food_text)):
         cached = None
     if cached:
         calories = cached["calories"]
@@ -312,6 +313,13 @@ async def finalize_entry(
             await context.bot.send_message(chat_id=int(chat_id), text=("Test only — nothing saved.\n\n" if test_mode else "") + text,
                                            reply_markup=conversation.menu_keyboard())
             return
+
+        if conversation.requires_portion(food_text) and (
+                not result["needs_clarification"] or conversation.diet_is_stated(food_text)):
+            # A model response cannot supply a portion the user never gave us.
+            result = dict(result, needs_clarification=True, clarification_kind="portion",
+                          clarification_question="About how much did you have? Tell me the amount, like 1 cup, 2 pieces or 200 g.",
+                          clarification_options=[], calories=None, protein_g=None)
 
         if result["needs_clarification"]:
             question = result.get("clarification_question") or "What food and amount did you have?"

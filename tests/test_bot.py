@@ -118,7 +118,7 @@ def test_stale_skip_cannot_overwrite_logged(ctx, update):
 @pytest.mark.parametrize('callback', [False, True])
 def test_edit_clarification_updates_row(callback, ctx, update):
     day = bot.today_local().isoformat()
-    db.set_pending_clarification('42', 'morning', 'Veg?', 'biryani', day, True)
+    db.set_pending_clarification('42', 'morning', 'Veg?', '1 cup biryani', day, True)
     update.message.text = 'veg'
     update.callback_query = SimpleNamespace(answer=AsyncMock(), message=SimpleNamespace(chat=SimpleNamespace(id=42)), data='clarveg') if callback else None
     run(bot.on_clarification_button(update, ctx) if callback else bot.handle_text(update, ctx))

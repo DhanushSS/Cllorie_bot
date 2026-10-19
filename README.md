@@ -103,27 +103,37 @@ Explicit chicken, mutton, fish and egg descriptions resolve as non-veg; paneer a
 plant-based substitutes are handled appropriately. A biryani order count is not
 assumed to mean one cup. The bot asks for the amount eaten before estimating.
 
-`restaurant_nutrition.py` holds eight dated menu entries for Meghana and Nandhana.
-Published values are matched to the actual variant and fraction of a listed order;
-Meghana without a variant and Nandhana chicken without its style require a choice.
-The source URL, check date, serving description and full-item assumption appear
-with the result. The source does not itemize side nutrition. Different sides,
-extra items, weights without a matching weight basis, bucket/high-protein products
-and unsupported variants use an explicitly labelled recipe estimate instead.
-There is no general live restaurant-search API connected to this bot.
+The active path is now restaurant-neutral: `nvidia_client.py` identifies any named
+restaurant and dish, then `nutrition_research.py` searches via `web_nutrition.py`.
+India is the default market unless another country is explicit. DDGS searches Bing
+(with a bounded Yahoo fallback), opens public pages and follows nutrition PDF links.
+No paid search account or brand allowlist is required. Search engines/sites can
+still block requests or lack useful nutrition; successful coverage is not guaranteed.
 
-Sources checked 19 October 2026:
-- [Meghana, Residency Road](https://www.swiggy.com/city/bangalore/meghana-foods-residency-road-rest3241?query=Chicken)
-- [Nandhana, Banashankari](https://www.swiggy.com/city/bangalore/nandhana-palace-beml-layout-5th-stage-banashankari-rest389325)
+The larger NVIDIA Ultra model reasons over fetched page/PDF excerpts and checks
+country, variant, size/crust, whole-order versus slice/per-100g basis, and all named
+combo components. Published totals require source IDs and verbatim row/header/
+serving evidence. The application validates the quotes and nutrient numbers against
+fetched text, then calculates scaled totals itself. A separate reasoning call checks
+nutrient columns, country/variant and serving arithmetic before a published match
+is accepted. Unverified third-party publishers cannot establish a published match. Matching is still model-assisted;
+this does not independently verify restaurant recipes or guarantee ±10% accuracy.
+Published matches include source URLs, serving assumptions and retrieval date.
+Insufficient evidence falls back to a clearly labelled recipe estimate, or a focused
+question if the food/portion is still unclear. Search failures are stated explicitly.
 
-Menu facts expire after 90 days and then stop being used as published values until
-reviewed. They are merchant menu declarations, not independently measured nutrition.
-For other foods, the larger reasoning model provides an estimate, assumed portion
-and uncertainty range when available. Generic database values cannot overwrite a
-matched restaurant menu entry. Automatic caches from older policies are rechecked;
-user-entered corrections and historical logs are preserved. Named usuals retain
-explicit restaurant, variant and portion details. This is persisted user memory,
-not automatic model training on guesses.
+Automatic guesses are rechecked so an old cache cannot bypass a new restaurant
+search. Explicit user corrections remain authoritative; usuals and historical logs
+are preserved. Generic API nutrition cannot overwrite restaurant research. The old
+`restaurant_nutrition.py` is retained only as a legacy snapshot, not used by the bot.
+This is on-demand research and explicit personal memory, not automatic training.
+
+Public-page retrieval blocks private/link-local addresses, pins validated IPs,
+revalidates redirects, and bounds page sizes, fetches and PDF extraction. Web text
+is untrusted data. PDF extraction runs separately with a deadline and a Linux memory
+limit. Search receives only the extracted restaurant, dish and country, not chat IDs
+or the user's full conversation. `/test` uses this same research pipeline without
+writing meals, Sheets, aliases or the automatic food cache.
 
 ## Azure setup
 

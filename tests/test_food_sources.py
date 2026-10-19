@@ -3,7 +3,7 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import Mock
 import pytest
-import bot, config, db, food_rules, restaurant_nutrition as menu, nvidia_client, sheets_client, nutrition_api
+import bot, config, db, food_rules, restaurant_nutrition as menu, nvidia_client, sheets_client, nutrition_api, nutrition_research, web_nutrition
 
 run=asyncio.run
 
@@ -21,7 +21,7 @@ def test_named_meat_goes_to_portion_not_diet(food,ctx):
     pending=db.get_pending_clarification('42')
     assert 'how much' in pending['question'].lower()
     assert 'Veg' not in pending['options'] and 'Non-veg' not in pending['options']
-    nvidia_client.estimate.assert_not_called()
+    nvidia_client.estimate.assert_called_once()
     sheets_client.append_entry.assert_not_called()
 
 @pytest.mark.parametrize('text', ['one chicken biryani, full restaurant order','300 g chicken biryani','half restaurant order of veg biryani'])
@@ -85,6 +85,7 @@ def test_veg_choice_does_not_accidentally_become_paneer():
 def test_published_test_result_bypasses_ai_database_and_writes(ctx,monkeypatch):
     monkeypatch.setattr(config,'CALORIE_MULTIPLIER',1.0)
     food='Meghana boneless chicken biryani half listed order'
+    monkeypatch.setattr(nutrition_research, 'estimate', Mock(return_value=dict(is_food=True, needs_clarification=False, calories=723.2, protein_g=32.1, category='non-veg', _published_match=True, source_note='Published menu match: https://example.com/menu')))
     run(bot.finalize_entry('42',bot.today_local().isoformat(),'morning',food,ctx,False,test_mode=True))
     assert '723.2 kcal' in ctx.bot.send_message.call_args.kwargs['text']
     nvidia_client.estimate.assert_not_called()
@@ -128,7 +129,8 @@ def test_other_variants_and_recipe_changes_are_not_catalog_matches(text):
 
 
 def test_recipe_estimate_keeps_uncertainty_and_brand_warning(monkeypatch,ctx):
-    monkeypatch.setattr(nvidia_client,'estimate',Mock(return_value=dict(is_food=True,needs_clarification=False,calories=800,protein_g=30,category='non-veg',calorie_range=[600,1000],protein_range=[20,40],notes='Assumes a half restaurant order.')))
+    monkeypatch.setattr(nvidia_client,'estimate',Mock(return_value=dict(is_food=True,needs_clarification=False,calories=800,protein_g=30,category='non-veg',calorie_range=[600,1000],protein_range=[20,40],notes='Assumes a half restaurant order.',restaurant='Nandhana')))
+    monkeypatch.setattr(web_nutrition,'research',Mock(return_value=dict(search_ok=True,documents=[])))
     run(bot.finalize_entry('42',bot.today_local().isoformat(),'morning','Nandhana chicken 555 biryani half restaurant order',ctx,False,test_mode=True))
     reply=ctx.bot.send_message.call_args.kwargs['text']
     assert '600–1000' in reply and '20–40' in reply

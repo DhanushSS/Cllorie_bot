@@ -24,7 +24,7 @@ from telegram.ext import (
 import charts
 import conversation
 import food_rules
-import restaurant_nutrition
+import nutrition_research
 import config
 import db
 import nutrition_api
@@ -287,9 +287,9 @@ async def finalize_entry(
 
     cache_key = db.food_cache_key(food_text)
     cached = db.get_cached_food(cache_key)
-    # Re-check older automatic guesses under the new portion-validation policy.
-    if cached and cached.get("notes") != "manually corrected" and (
-            cached.get("policy_version", 1) < 3 or restaurant_nutrition.brand(food_text) or conversation.requires_portion(food_text)):
+    # Reclassify each new message so arbitrary restaurant names always trigger
+    # fresh research. Only explicit user corrections bypass automatic analysis.
+    if cached and cached.get("notes") != "manually corrected":
         cached = None
     if cached:
         calories = cached["calories"]
@@ -297,16 +297,12 @@ async def finalize_entry(
         category = cached["category"]
         source_note = cached["notes"]
     else:
-        menu_result = restaurant_nutrition.resolve(food_text, today_local())
-        if menu_result is not None:
-            result = menu_result
-        elif result is None:
-            result = food_rules.biryani_preflight(food_text)
+        menu_result = None
         if result is None:
             await context.bot.send_chat_action(chat_id=int(chat_id), action="typing")
             await context.bot.send_message(chat_id=int(chat_id), text=("Test only — checking that food and portion…" if test_mode else "Got it — checking the food, portion and recipe. I may take a little longer to work this out."))
             try:
-                result = await asyncio.to_thread(nvidia_client.estimate, label, food_text)
+                result = await asyncio.to_thread(nutrition_research.estimate, label, food_text)
             except (APIConnectionError, APIStatusError) as exc:
                 logger.warning("NVIDIA estimate unavailable (%s)", type(exc).__name__)
                 await context.bot.send_message(
@@ -314,6 +310,11 @@ async def finalize_entry(
                     text="The nutrition AI is unavailable or took too long. Nothing was saved. Please try again shortly.",
                 )
                 return
+
+        if result.get('_published_match'):
+            menu_result = result
+        elif not result.get('restaurant') and result.get('is_food') is True:
+            result = food_rules.biryani_preflight(food_text) or result
 
         if result.get("is_food") is not True:
             text = HELP_TEXT if result.get("intent") in ("greeting", "help") else "I'm here for food and your meal log. Tell me what you had and roughly how much, or pick a button below."
@@ -355,7 +356,7 @@ async def finalize_entry(
             return
 
         # Generic lookup must never overwrite an exact restaurant menu match.
-        db_result = None if menu_result or restaurant_nutrition.brand(food_text) else await asyncio.to_thread(nutrition_api.lookup, food_text)
+        db_result = None if menu_result or result.get('restaurant') else await asyncio.to_thread(nutrition_api.lookup, food_text)
         ai_cal = nutrition_api.nutrient(result.get("calories"))
         ai_pro = nutrition_api.nutrient(result.get("protein_g"))
         valid_ai = ai_cal is not None and ai_cal > 0 and ai_pro is not None
@@ -371,8 +372,8 @@ async def finalize_entry(
             source_note = "AI estimate: portion-adjusted" if db_result else "AI estimate"
             if result.get("notes"):
                 source_note += ": " + str(result["notes"])
-            if restaurant_nutrition.brand(food_text):
-                source_note += " No matching published menu value for this exact variant/portion; not verified brand nutrition."
+            if result.get('_research_note'):
+                source_note += "\n" + result['_research_note']
             for field, label, unit in [('calorie_range', 'Likely calorie range', 'kcal'), ('protein_range', 'Likely protein range', 'g')]:
                 bounds = result.get(field)
                 if isinstance(bounds, list) and len(bounds) == 2:

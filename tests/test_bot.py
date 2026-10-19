@@ -61,10 +61,10 @@ def test_priority_and_threshold(database, expected, note, monkeypatch, ctx):
     cached = db.get_cached_food('banana')
     assert cached['calories'] == pytest.approx(expected / 1.3)
     assert note in cached['notes']
-    monkeypatch.setattr(nvidia_client, 'estimate', Mock(side_effect=AssertionError('cache must bypass AI')))
-    monkeypatch.setattr(nutrition_api, 'lookup', Mock(side_effect=AssertionError('cache must bypass DB')))
+    nvidia_client.estimate.reset_mock()
     run(bot.finalize_entry('42', '2026-10-18', 'afternoon', 'banana', ctx, False))
     assert db.get_day_status('42', '2026-10-18')['afternoon']['calories'] == expected
+    nvidia_client.estimate.assert_called_once()  # Automatic guesses are rechecked.
 
 
 def test_fix_cache_not_double_multiplied(ctx, update):

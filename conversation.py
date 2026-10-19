@@ -6,6 +6,8 @@ HELP_TEXT = (
     "Hey 👋 I can help you keep track of calories and protein.\n\n"
     "Tell me what you ate and roughly how much — ‘2 idlis and a bowl of sambar’ works. "
     "I'll ask if the food or portion isn't clear.\n\n"
+    "Eating out? Name the restaurant, dish and size — I can look for its nutrition online. "
+    "If I can't find a good match, I'll say so.\n\n"
     "Here's what you can do:\n"
     "• Log meal — save food to your daily log.\n"
     "• Test food (/test) — try an estimate without saving anything.\n"

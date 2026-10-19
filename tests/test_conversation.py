@@ -252,3 +252,18 @@ def test_factor_migration_preserves_manual_totals_and_history():
     assert db.get_day_status('42','2026-10-18')['morning']['calories']==500
     assert migrate(config.DB_PATH)['already_applied']
     assert db.get_cached_food('corrected')['calories']==pytest.approx(500)
+
+
+def test_followup_preserves_answered_question(monkeypatch,update,ctx):
+    day=bot.today_local().isoformat()
+    db.set_pending_clarification('42','morning','Veg or non-veg?','biryani',day,False,['Veg','Non-veg'],'diet')
+    run(bot.on_answer(callback(update,'answer:log:diet:0'),ctx))
+    description=nvidia_client.estimate.call_args.args[1]
+    assert description=='biryani. Answered question: Veg or non-veg? Clarification: Veg'
+    assert 'ALREADY been answered' in nvidia_client.SYSTEM_PROMPT
+
+
+def test_greeting_cannot_become_food_through_answered_question(ctx):
+    run(bot.finalize_entry('42',bot.today_local().isoformat(),'morning','Hi. Answered question: Veg or non-veg? Clarification: Veg',ctx,False))
+    nvidia_client.estimate.assert_not_called()
+    sheets_client.append_entry.assert_not_called()

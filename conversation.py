@@ -60,7 +60,7 @@ def intent(text):
 
 
 def is_conversation(text):
-    original = re.split(r'\.\s*(?:Clarification:|It is (?:veg|non-veg)\.)', text, maxsplit=1, flags=re.I)[0]
+    original = re.split(r'\.\s*(?:Answered question:|Clarification:|It is (?:veg|non-veg)\.)', text, maxsplit=1, flags=re.I)[0]
     return intent(original) is not None
 
 

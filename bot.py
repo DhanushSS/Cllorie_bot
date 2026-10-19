@@ -106,6 +106,12 @@ async def require_live(update):
     return True
 
 
+def clarified_food(pending, answer):
+    # Preserve the question as well as the answer so the model knows what is settled.
+    question = pending.get("question") or "Please clarify the food or portion"
+    return f"{pending['food_text']}. Answered question: {question} Clarification: {answer}"
+
+
 def current_pending(chat_id, today):
     pending = db.get_pending_clarification(chat_id)
     if pending and pending.get("date") != today:
@@ -406,7 +412,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if test_active(chat_id):
         pending = test_pending(chat_id)
-        combined = f"{pending['food_text']}. Clarification: {text}" if pending else text
+        combined = clarified_food(pending, text) if pending else text
         await finalize_entry(chat_id, today, "morning", combined, context, False, test_mode=True)
         return
 
@@ -417,7 +423,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     pending = current_pending(chat_id, today)
     if pending:
-        combined = f"{pending['food_text']}. Clarification: {text}"
+        combined = clarified_food(pending, text)
         await finalize_entry(chat_id, today, pending["meal"], combined, context,
                              is_edit=pending.get("is_edit", False))
         return
@@ -465,7 +471,7 @@ async def on_clarification_button(update: Update, context: ContextTypes.DEFAULT_
         await context.bot.send_message(chat_id=int(chat_id), text="Use the buttons under my latest question, or type your answer.")
         return
     answer = "veg" if query.data == "clarveg" else "non-veg"
-    combined = f"{pending['food_text']}. It is {answer}."
+    combined = clarified_food(pending, answer)
     today = today_local().isoformat()
     try:
         await finalize_entry(chat_id, today, pending["meal"], combined, context, is_edit=pending.get("is_edit", False))
@@ -748,7 +754,7 @@ async def on_answer(update, context):
         if not 0 <= index < len(pending.get('options', [])):
             return
         answer = pending['options'][index]
-        combined = f"{pending['food_text']}. Clarification: {answer}"
+        combined = clarified_food(pending, answer)
         await finalize_entry(chat_id, today_local().isoformat(), pending['meal'], combined,
                              context, pending.get('is_edit', False), test_mode=testing)
     except Exception:

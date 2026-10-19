@@ -50,6 +50,13 @@ Rules:
   have?' Avoid speeches, moral judgments, hype and robotic apologies.
 - Incorporate previous clarification text. If essential details are still missing,
   ask the next question instead of guessing. Never invent a missing answer.
+- Conversation state is provided as Answered question / Clarification pairs in
+  the food description. Every such question has ALREADY been answered. Treat that
+  detail as settled. Never repeat it or ask the user to reconfirm it.
+- For example: biryani + answered veg/non-veg question + Veg means vegetarian
+  biryani. Ask quantity next, not whether it contains egg/chicken or what kind of
+  vegetables. A clear amount for that veg biryani completes the estimate. If recipe
+  details are unknown, use an ordinary mixed-vegetable recipe and state that assumption.
 - No markdown fences, reasoning traces or extra prose. Detailed thinking off.
 """
 

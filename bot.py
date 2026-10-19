@@ -366,7 +366,7 @@ async def finalize_entry(
     if test_mode:
         db.delete_kv(f"test_clar:{chat_id}")
         await context.bot.send_message(chat_id=int(chat_id),
-            text=f"Test only — nothing saved.\n{food_text}\nAbout {calories:g} kcal · {protein:g} g protein\n{source_note}\n\nTry another food, or tap Back to logging.",
+            text=f"Test only — nothing saved.\n{conversation.food_summary(food_text)}\nAbout {calories:g} kcal · {protein:g} g protein\n{source_note}\n\nTry another food, or tap Back to logging.",
             reply_markup=conversation.result_keyboard(True))
         return
 
@@ -385,7 +385,7 @@ async def finalize_entry(
     verb = "Updated" if is_edit else "Saved"
     await context.bot.send_message(
         chat_id=int(chat_id),
-        text=f"{verb} {label}: {food_text}\nAbout {calories:g} kcal · {protein:g} g protein\n{source_note}",
+        text=f"{verb} {label}: {conversation.food_summary(food_text)}\nAbout {calories:g} kcal · {protein:g} g protein\n{source_note}",
         reply_markup=conversation.result_keyboard(memory_id=memory_id),
     )
 
@@ -654,7 +654,7 @@ async def show_usual(update, item):
          InlineKeyboardButton('Test it first', callback_data=f"use_usual:test:{item['id']}")],
         [InlineKeyboardButton('Cancel', callback_data='nav_cancel')],
     ])
-    await update.message.reply_text(f"Your usual {item['name']}:\n{item['food_text']}\n\nSame amount this time? If it changed, just type the new meal and quantity instead.", reply_markup=keyboard)
+    await update.message.reply_text(f"Your usual {item['name']}:\n{conversation.food_summary(item['food_text'])}\n\nSame amount this time? If it changed, just type the new meal and quantity instead.", reply_markup=keyboard)
 
 
 @owner_only
@@ -673,7 +673,7 @@ async def cmd_remember(update, context):
     if name:
         await save_usual(update, context, name)
     else:
-        await update.message.reply_text(f"What should I call this meal? Something like ‘breakfast’ or ‘office lunch’ works.\n\n{last['food_text']}\n\nSend /cancel to leave it.")
+        await update.message.reply_text(f"What should I call this meal? Something like ‘breakfast’ or ‘office lunch’ works.\n\n{conversation.food_summary(last['food_text'])}\n\nSend /cancel to leave it.")
 
 
 async def save_usual(update, context, name):
@@ -692,7 +692,7 @@ async def save_usual(update, context, name):
         return
     db.remember_meal(chat_id, name, food)
     db.delete_kv(f"remember_pending:{chat_id}")
-    await update.message.reply_text(f"Got it — ‘{name}’ means:\n{food}\n\nNext time, say ‘my usual {name}’. I'll show it before logging. You can remove it with /forget {name}.", reply_markup=conversation.menu_keyboard())
+    await update.message.reply_text(f"Got it — ‘{name}’ means:\n{conversation.food_summary(food)}\n\nNext time, say ‘my usual {name}’. I'll show it before logging. You can remove it with /forget {name}.", reply_markup=conversation.menu_keyboard())
 
 
 @owner_only

@@ -107,3 +107,9 @@ def requires_portion(text):
 def diet_is_stated(text):
     user_text = re.sub(r'Answered question:.*?Clarification:', '', text, flags=re.I | re.S)
     return bool(re.search(r'\b(?:veg|vegetarian|non[ -]?veg|chicken|mutton|fish|egg|paneer)\b', user_text, re.I))
+
+
+def food_summary(text):
+    """Show the user's food and answers without internal conversation labels."""
+    summary = re.sub(r'\.\s*Answered question:.*?Clarification:\s*', ' · ', text, flags=re.I | re.S)
+    return re.sub(r'\.\s*Clarification:\s*', ' · ', summary, flags=re.I)

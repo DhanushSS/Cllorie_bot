@@ -290,3 +290,11 @@ def test_repeated_diet_question_moves_to_missing_portion(monkeypatch,ctx):
 def test_question_example_is_not_a_user_supplied_portion():
     assert conversation.requires_portion('rice. Answered question: Was it 1 cup or 2 cups? Clarification: not sure')
     assert not conversation.requires_portion('rice. Answered question: How much? Clarification: 1 cup')
+
+
+def test_result_displays_food_without_internal_question_labels(ctx):
+    food='biryani. Answered question: Veg or non-veg? Clarification: Veg. Answered question: How much? Clarification: 1 cup'
+    run(bot.finalize_entry('42',bot.today_local().isoformat(),'morning',food,ctx,False,test_mode=True))
+    reply=ctx.bot.send_message.call_args.kwargs['text']
+    assert 'biryani · Veg · 1 cup' in reply
+    assert 'Answered question' not in reply and 'Clarification:' not in reply

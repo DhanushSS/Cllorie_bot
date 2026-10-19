@@ -1,0 +1,47 @@
+CLLORIE BOT — MULTI-USER ASSESSMENT
+19 October 2026
+
+Yes, the same Telegram bot can serve several people. This release still admits
+only the registered owner. Public access has not been enabled.
+
+Why simply removing the owner check is unsafe
+- The Google Sheet has no user column. Reports read the shared data, and edits
+  match a date and meal rather than a person. Users could see or overwrite each
+  other's meals if the owner check were removed.
+- The food estimate cache is global. A person's manual correction could affect
+  someone else's estimate.
+- Reminders and timezone settings currently assume one owner.
+- Updates are processed serially. A slow nutrition request could delay another
+  person's commands. The existing small VM and API quota have not been load-tested.
+
+What already helps
+- Meal status, pending conversations and saved usuals include a chat ID.
+- Saved usuals are looked up only within that chat, including button actions.
+- Persistent storage and automatic process restart are already in place.
+These pieces help, but they do not make the current app multi-user safe.
+
+Recommended first version: a small invite-only group of private chats
+1. Store each meal under a user ID in the main database. Scope every read, edit,
+   report, correction, pending question and saved usual to that same user.
+2. Keep manual corrections private to their user. Any shared automatic lookup
+   cache must be separate from private food text and personal adjustments.
+3. Keep the owner's existing Sheet intact. Use per-user exports or separate
+   spreadsheets for other people; never expose the owner's shared Sheet to them.
+4. Add invitation/admission controls, per-person timezone and opt-in reminders,
+   plus a way to export or delete that person's data.
+5. Add per-user request ordering with bounded shared AI concurrency, rate limits,
+   clear waiting messages and explicit provider-failure replies. Load-test the
+   actual VM/API before choosing an invitation limit.
+6. Verify with two test accounts that neither can read, alter or infer the
+   other's history, corrections, reminders, usuals or callback actions.
+
+The VM can be reused for a small trial if measured load permits. Capacity is not
+yet established; increasing users also increases provider usage and hosting load.
+The service operator still controls the database/server. Per-user isolation does
+not hide data from the operator, so users should understand who runs the bot.
+
+Memory and accuracy
+This release remembers explicitly named meals and user corrections. It does not
+train itself on chats or turn AI guesses into verified nutrition facts. Estimates
+show their source and portion assumptions. Exact calories/protein still depend on
+recipe and quantity; a label or measured recipe can be entered via Correct totals.

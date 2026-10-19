@@ -32,7 +32,7 @@ def append_entry(date_str, meal, food_text, category, calories, protein_g) -> No
     ws = _sheet()
     ws.append_row(
         [date_str, meal, food_text, category, calories, protein_g,
-         datetime.now().isoformat(timespec="seconds")]
+         datetime.now(config.TIMEZONE).isoformat(timespec="seconds")]
     )
 
 
@@ -43,9 +43,9 @@ def update_entry(date_str, meal, food_text, category, calories, protein_g) -> bo
     for i, row in enumerate(records[1:], start=2):
         if len(row) >= 2 and row[0] == date_str and row[1] == meal:
             ws.update(
-                f"A{i}:G{i}",
-                [[date_str, meal, food_text, category, calories, protein_g,
-                  datetime.now().isoformat(timespec="seconds")]],
+                range_name=f"A{i}:G{i}",
+                values=[[date_str, meal, food_text, category, calories, protein_g,
+                  datetime.now(config.TIMEZONE).isoformat(timespec="seconds")]],
             )
             return True
     append_entry(date_str, meal, food_text, category, calories, protein_g)

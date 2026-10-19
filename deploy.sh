@@ -11,7 +11,7 @@ fi
 revision=$(git rev-parse --short HEAD)
 image="calorie-bot:$revision"
 docker build -t "$image" .
-docker run --rm --env-file .env "$image" python -m py_compile bot.py config.py db.py nutrition_api.py nvidia_client.py sheets_client.py charts.py
+docker run --rm --env-file .env "$image" python -m py_compile bot.py conversation.py config.py db.py nutrition_api.py nvidia_client.py sheets_client.py charts.py
 docker volume create calorie-bot-data >/dev/null
 previous=$(docker inspect --format '{{.Image}}' calorie-bot 2>/dev/null || true)
 if [[ -n "$previous" ]]; then

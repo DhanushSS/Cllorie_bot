@@ -205,8 +205,8 @@ def test_clarification_does_not_log_early(monkeypatch,ctx):
     sheets_client.append_entry.assert_not_called()
     assert db.get_pending_clarification('42')['date']=='2026-10-18'
     assert db.earliest_pending_meal('42','2026-10-18')=='morning'
-    buttons=ctx.bot.send_message.call_args.kwargs['reply_markup'].inline_keyboard[0]
-    assert [b.text for b in buttons]==['Veg','Non-veg']
+    buttons=ctx.bot.send_message.call_args.kwargs['reply_markup'].inline_keyboard
+    assert [b.text for row in buttons for b in row]==['Veg','Non-veg','Cancel']
 
 
 def test_provider_timeout_keeps_meal_pending(monkeypatch,ctx):
@@ -260,7 +260,8 @@ def test_greeting_never_estimates_or_logs(text,update,ctx):
     nvidia_client.estimate.assert_not_called()
     sheets_client.append_entry.assert_not_called()
     assert db.earliest_pending_meal('42',bot.today_local().isoformat())=='morning'
-    assert 'Tell me what you ate' in update.message.reply_text.call_args.args[0]
+    reply=update.message.reply_text.call_args.args[0]
+    assert ('Anytime' in reply) if text=='thanks' else ('Tell me what you ate' in reply)
 
 
 def test_old_greeting_cache_is_never_used(ctx):

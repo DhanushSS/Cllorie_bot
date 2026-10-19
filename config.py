@@ -28,7 +28,7 @@ NUTRITION_API_URL = "https://api.api-ninjas.com/v1/nutrition"
 # Flat multiplier applied to every logged calorie number, regardless of source
 # (cache, database, or AI estimate). Protein is left untouched. Override via env
 # var if you ever want a different factor without touching code.
-CALORIE_MULTIPLIER = float(os.environ.get("CALORIE_MULTIPLIER", "1.3"))
+CALORIE_MULTIPLIER = float(os.environ.get("CALORIE_MULTIPLIER", "1.0"))
 
 NUTRITION_DB_MIN_RATIO = float(os.environ.get("NUTRITION_DB_MIN_RATIO", "0.6"))
 ALLOWED_CHAT_ID = os.environ.get("ALLOWED_CHAT_ID", "").strip()

@@ -9,6 +9,10 @@ clarifications and raw food estimates across deployments. Default timezone is As
 | Command | What it does |
 |---|---|
 | `/start`, `/help` | Register the first owner and show help; optional allowed chat restriction |
+| `/test [food]` | Try the same estimation pipeline without saving meals, estimates or usuals |
+| `/cancel` | Leave test mode or cancel a pending question |
+| `/usuals` | Preview your saved usual meals before logging |
+| `/remember name`, `/forget name` | Explicitly save or remove a nickname for your last logged meal |
 | `/skip` | Skip the earliest pending meal and unlock the next meal |
 | `/edit` | Replace one of today's logged meals, including after clarification |
 | `/fix morning 650 25` | Set breakfast's final totals to 650 kcal and 25 g protein; update its cache |
@@ -16,8 +20,8 @@ clarifications and raw food estimates across deployments. Default timezone is As
 | `/week`, `/month` | Last 7 / 30 days text summary and chart when data exists |
 
 Only the registered owner can read reports or change records. Meals must be completed
-or skipped in order: morning, afternoon, night. Ambiguous foods get a Veg / Non-veg
-follow-up. Estimates are approximate and depend on the described portion.
+or skipped in order: morning, afternoon, night. Ambiguous foods get a relevant type or portion
+question, with answer buttons when available. Estimates are approximate and depend on the described portion.
 
 The cache is checked first. For uncached foods the AI resolves ambiguity, then usable
 API Ninjas nutrients take priority unless database calories are **strictly below**
@@ -47,7 +51,7 @@ literal values: do not wrap the JSON or other values in outer shell quotes.
 | `GOOGLE_SHEET_ID` | Required sheet ID; share sheet with the service account as Editor |
 | `GOOGLE_SHEET_TAB` | `Logs` |
 | `NUTRITION_API_KEY` | Optional; empty disables API Ninjas |
-| `CALORIE_MULTIPLIER` | `1.3`, finite and greater than zero |
+| `CALORIE_MULTIPLIER` | `1.0` (unadjusted), finite and greater than zero |
 | `NUTRITION_DB_MIN_RATIO` | `0.6`, between 0 and 1 |
 | `ALLOWED_CHAT_ID` | Optional; restrict who can claim and use the bot |
 | `TIMEZONE` | `Asia/Kolkata` |
@@ -68,10 +72,24 @@ invalid nutrients and provider errors leave the meal unsaved. Network calls run
 off the event loop so reminders remain responsive while inference is pending.
 Totals for real foods are estimates; describe portions and use `/fix` for known values.
 
-An initial live test used GPT OSS 20B to address an 89-second Nemotron response,
-but the user found it had treated a greeting plus a Veg answer as a meal. The false
-row/cache entry was removed with a reversible backup, the original model restored,
-and deterministic greeting plus strict food-validation checks were added.
+Greetings open a friendly guide and persistent buttons for logging, testing, reports,
+editing, correcting totals, skipping and saved usuals. Mixed greetings plus food still
+reach the estimator. Test mode is clearly labelled and stays on until Log meal,
+Back to logging, /cancel or a new local day. Reports remain available during tests;
+real mutations require leaving test mode. Pending real edits survive a test session.
+
+The bot remembers only explicit meal nicknames and corrections. This is saved personal
+memory, not model training or automatically learned nutrition facts. Usuals are shown
+with their original portion for confirmation before logging. Old automatic estimates
+are rechecked under the new portion policy; manual corrections remain usable.
+
+The 19 October 2026 deployment switches new estimates from 1.3 to 1.0. Historical
+Sheet rows and saved meal totals remain unchanged. A one-time backed-up migration
+preserves previously corrected final calories in the cache when changing the factor.
+
+Multi-user access is not enabled. Removing the owner guard alone would expose the
+shared Sheet and mix records. Before inviting users, reports, corrections, caches,
+exports and reminders need per-user isolation, admission controls and load testing.
 
 ## Azure setup
 

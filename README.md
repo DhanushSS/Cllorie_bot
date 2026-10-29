@@ -1,14 +1,15 @@
 # Cllorie Bot
 
 Personal Telegram calorie and protein diary, hosted on Azure with outbound polling.
-Meals are recorded in Google Sheets; SQLite preserves ownership, meal state, pending
-clarifications and raw food estimates across deployments. Default timezone is Asia/Kolkata.
+The original owner's meals stay in Google Sheets. Each friend's meals and corrections
+are stored separately in SQLite, which also preserves pending questions and saved usuals.
+Default timezone is Asia/Kolkata.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `/start`, `/help` | Register the first owner and show help; optional allowed chat restriction |
+| `/start`, `/help` | Register in a private chat and show help |
 | `/test [food]` | Try the same estimation pipeline without saving meals, estimates or usuals |
 | `/cancel` | Leave test mode or cancel a pending question |
 | `/usuals` | Preview your saved usual meals before logging |
@@ -18,8 +19,16 @@ clarifications and raw food estimates across deployments. Default timezone is As
 | `/fix morning 650 25` | Set breakfast's final totals to 650 kcal and 25 g protein; update its cache |
 | `/today` | Today's text summary |
 | `/week`, `/month` | Last 7 / 30 days text summary and chart when data exists |
+| `/reminders on`, `/reminders off` | Opt in to or turn off meal reminders |
 
-Only the registered owner can read reports or change records. Meals must be completed
+When `MULTI_USER_ENABLED=true`, anyone who opens a private chat and sends `/start`
+can use the bot. Each person can read and change only their own meals, usuals,
+corrections and reports. The original owner's Sheet remains exclusive to that owner;
+friends' reports come from their separate database records. Friends' reminders are
+off until they send `/reminders on`. A single timezone and reminder schedule are
+shared by this version. Open registration can increase NVIDIA API usage.
+
+Meals must be completed
 or skipped in order: morning, afternoon, night. Ambiguous foods get a relevant type or portion
 question, with answer buttons when available. A separate portion check prevents
 common variable-serving dishes (rice, biryani, curry, dal and others) from being
@@ -59,7 +68,8 @@ literal values: do not wrap the JSON or other values in outer shell quotes.
 | `NUTRITION_API_KEY` | Optional; empty disables API Ninjas |
 | `CALORIE_MULTIPLIER` | `1.0` (unadjusted), finite and greater than zero |
 | `NUTRITION_DB_MIN_RATIO` | `0.6`, between 0 and 1 |
-| `ALLOWED_CHAT_ID` | Optional; restrict who can claim and use the bot |
+| `ALLOWED_CHAT_ID` | Optional owner chat ID; restricts ownership claim in multi-user mode |
+| `MULTI_USER_ENABLED` | `false` by default; set `true` to allow private-chat registration |
 | `TIMEZONE` | `Asia/Kolkata` |
 | `REMINDER_MORNING` | `08:30` |
 | `REMINDER_AFTERNOON` | `14:00` |
@@ -93,9 +103,10 @@ The 19 October 2026 deployment switches new estimates from 1.3 to 1.0. Historica
 Sheet rows and saved meal totals remain unchanged. A one-time backed-up migration
 preserves previously corrected final calories in the cache when changing the factor.
 
-Multi-user access is not enabled. Removing the owner guard alone would expose the
-shared Sheet and mix records. Before inviting users, reports, corrections, caches,
-exports and reminders need per-user isolation, admission controls and load testing.
+Multi-user mode is a small-group first version. Messages are processed in order,
+so a long nutrition lookup can delay a friend's reply. The existing VM and model
+quota have not been load-tested for a large group. Users can request their data
+from the operator; self-service export and deletion are not yet in the bot.
 
 ## Restaurant nutrition and reasoning
 

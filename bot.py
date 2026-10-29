@@ -61,10 +61,25 @@ def _is_owner(chat_id: str) -> bool:
     return db.get_kv("chat_id") == chat_id
 
 
+def _allowed(update) -> bool:
+    chat = update.effective_chat
+    if not chat:
+        return False
+    chat_id = str(chat.id)
+    if not config.MULTI_USER_ENABLED:
+        return _is_owner(chat_id)
+    if getattr(chat, "type", "private") != "private":
+        return False
+    user = getattr(update, "effective_user", None)
+    if user and str(user.id) != chat_id:
+        return False
+    return db.is_registered(chat_id) or _is_owner(chat_id)
+
+
 def owner_only(func):
     @wraps(func)
     async def guarded(update, context):
-        if not update.effective_chat or not _is_owner(str(update.effective_chat.id)):
+        if not _allowed(update):
             if update.callback_query:
                 await update.callback_query.answer()
             return
@@ -137,6 +152,12 @@ def schedule_reminders(app: Application, chat_id: str) -> None:
     logger.info("Scheduled reminders for chat %s", chat_id)
 
 
+def unschedule_reminders(app: Application, chat_id: str) -> None:
+    for meal in config.MEALS:
+        for job in app.job_queue.get_jobs_by_name(f"reminder_{meal}_{chat_id}"):
+            job.schedule_removal()
+
+
 async def post_init(app: Application) -> None:
     if hasattr(app, "bot"):
         commands = [("start", "Meet your food diary"), ("help", "What the buttons do"),
@@ -145,13 +166,16 @@ async def post_init(app: Application) -> None:
                     ("edit", "Replace a logged meal"), ("skip", "Skip the pending meal"),
                     ("fix", "Correct calories and protein"), ("usuals", "Your saved usual meals"),
                     ("remember", "Name your last logged meal"), ("forget", "Remove a saved usual"),
-                    ("cancel", "Cancel a follow-up or test mode")]
+                    ("cancel", "Cancel a follow-up or test mode"),
+                    ("reminders", "Turn meal reminders on or off")]
         try:
             await app.bot.set_my_commands([BotCommand(name, description) for name, description in commands])
         except Exception:
             logger.warning("Could not refresh command menu; existing commands still work")
     chat_id = db.get_kv("chat_id")
-    if chat_id and _is_owner(chat_id):
+    if chat_id and _is_owner(chat_id) and not db.is_registered(chat_id):
+        db.register_user(chat_id, reminders=True)
+    for chat_id in db.reminder_users():
         schedule_reminders(app, chat_id)
 
 
@@ -159,16 +183,46 @@ async def post_init(app: Application) -> None:
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = str(update.effective_chat.id)
-    if config.ALLOWED_CHAT_ID and chat_id != config.ALLOWED_CHAT_ID:
+    if getattr(update.effective_chat, "type", "private") != "private":
+        await update.message.reply_text("Message me in a private chat to keep your food diary personal.")
+        return
+    user = getattr(update, "effective_user", None)
+    if user and str(user.id) != chat_id:
+        return
+    if config.ALLOWED_CHAT_ID and chat_id != config.ALLOWED_CHAT_ID and not config.MULTI_USER_ENABLED:
         return
     existing = db.get_kv("chat_id")
     if not existing:
+        if config.ALLOWED_CHAT_ID and chat_id != config.ALLOWED_CHAT_ID:
+            return
         db.set_kv("chat_id", chat_id)
-    elif existing != chat_id:
+        existing = chat_id
+    elif existing != chat_id and not config.MULTI_USER_ENABLED:
         await update.message.reply_text("This bot is already set up for another chat.")
         return
-    schedule_reminders(context.application, chat_id)
+    db.register_user(chat_id, reminders=(chat_id == existing))
+    if db.reminders_enabled(chat_id):
+        schedule_reminders(context.application, chat_id)
     await welcome(update, context)
+
+
+@owner_only
+async def cmd_reminders(update, context):
+    chat_id = str(update.effective_chat.id)
+    args = [arg.casefold() for arg in getattr(context, "args", [])]
+    if args and args[0] in ("on", "off"):
+        enabled = args[0] == "on"
+        db.register_user(chat_id)
+        db.set_reminders(chat_id, enabled)
+        if enabled:
+            schedule_reminders(context.application, chat_id)
+        else:
+            unschedule_reminders(context.application, chat_id)
+    else:
+        enabled = db.reminders_enabled(chat_id)
+        await update.message.reply_text(f"Reminders are {'on' if enabled else 'off'}. Send /reminders on or /reminders off.")
+        return
+    await update.message.reply_text(f"Meal reminders are now {'on' if enabled else 'off'}.")
 
 
 @owner_only
@@ -179,7 +233,11 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 @owner_only
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     d = today_local()
-    df = await asyncio.to_thread(sheets_client.get_entries_df, start_date=d, end_date=d)
+    chat_id = str(update.effective_chat.id)
+    if _is_owner(chat_id):
+        df = await asyncio.to_thread(sheets_client.get_entries_df, start_date=d, end_date=d)
+    else:
+        df = db.get_entries_df(chat_id, d, d)
     await update.message.reply_text(charts.summary_text(df))
 
 
@@ -196,7 +254,11 @@ async def cmd_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def _send_report(update: Update, context: ContextTypes.DEFAULT_TYPE, days: int, title: str) -> None:
     end = today_local()
     start = end - timedelta(days=days - 1)
-    df = await asyncio.to_thread(sheets_client.get_entries_df, start_date=start, end_date=end)
+    chat_id = str(update.effective_chat.id)
+    if _is_owner(chat_id):
+        df = await asyncio.to_thread(sheets_client.get_entries_df, start_date=start, end_date=end)
+    else:
+        df = db.get_entries_df(chat_id, start, end)
     await update.message.reply_text(f"{title}\n\n{charts.summary_text(df)}")
     buf = charts.build_chart(df, title)
     if buf:
@@ -250,7 +312,8 @@ async def reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     if meal is None:
         return  # everything already logged/skipped today, stay quiet
 
-    if not _is_owner(chat_id):
+    if not ((db.reminders_enabled(chat_id) or (_is_owner(chat_id) and not db.is_registered(chat_id)))
+            and (db.is_registered(chat_id) or _is_owner(chat_id))):
         return
     triggered_meal = context.job.data["meal"]
     label = config.MEAL_LABELS[meal]
@@ -286,7 +349,7 @@ async def finalize_entry(
         return
 
     cache_key = db.food_cache_key(food_text)
-    cached = db.get_cached_food(cache_key)
+    cached = db.get_cached_food(cache_key, chat_id=chat_id)
     # Reclassify each new message so arbitrary restaurant names always trigger
     # fresh research. Only explicit user corrections bypass automatic analysis.
     if cached and cached.get("notes") != "manually corrected":
@@ -389,7 +452,7 @@ async def finalize_entry(
             )
             return
         if not test_mode:
-            db.set_cached_food(cache_key, calories, protein, category, source_note)
+            db.set_cached_food(cache_key, calories, protein, category, source_note, chat_id=chat_id)
 
     # Cache/database/AI all store the raw number - the multiplier is applied once,
     # right here, regardless of which of those it came from.
@@ -402,10 +465,11 @@ async def finalize_entry(
             reply_markup=conversation.result_keyboard(True))
         return
 
-    if is_edit:
-        await asyncio.to_thread(sheets_client.update_entry, today, meal, food_text, category, calories, protein)
-    else:
-        await asyncio.to_thread(sheets_client.append_entry, today, meal, food_text, category, calories, protein)
+    if _is_owner(chat_id):
+        if is_edit:
+            await asyncio.to_thread(sheets_client.update_entry, today, meal, food_text, category, calories, protein)
+        else:
+            await asyncio.to_thread(sheets_client.append_entry, today, meal, food_text, category, calories, protein)
 
     db.upsert_meal_status(chat_id, today, meal, "logged", food_text, category, calories, protein)
     db.clear_pending_clarification(chat_id)
@@ -425,7 +489,7 @@ async def finalize_entry(
 @owner_only
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = str(update.effective_chat.id)
-    if not _is_owner(chat_id):
+    if not _allowed(update):
         return
 
     text = update.message.text.strip()
@@ -596,10 +660,11 @@ async def cmd_fix(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     calories, protein = round(calories, 1), round(protein, 1)
     food, category = entry["food_text"], entry["category"]
-    await asyncio.to_thread(sheets_client.update_entry, today, meal, food, category, calories, protein)
+    if _is_owner(chat_id):
+        await asyncio.to_thread(sheets_client.update_entry, today, meal, food, category, calories, protein)
     db.upsert_meal_status(chat_id, today, meal, "logged", food, category, calories, protein)
     db.set_cached_food(db.food_cache_key(food), calories / config.CALORIE_MULTIPLIER,
-                       protein, category, "manually corrected")
+                       protein, category, "manually corrected", chat_id=chat_id)
     db.clear_pending_clarification(chat_id)
     db.delete_kv(f"fix_pending:{chat_id}")
     db.delete_kv(f"edit_target:{chat_id}")
@@ -895,6 +960,7 @@ def main() -> None:
     app.add_handler(CommandHandler("usuals", cmd_usuals))
     app.add_handler(CommandHandler("remember", cmd_remember))
     app.add_handler(CommandHandler("forget", cmd_forget))
+    app.add_handler(CommandHandler("reminders", cmd_reminders))
     app.add_handler(CallbackQueryHandler(on_navigation, pattern="^(nav_|correct:|remember:|test_sample_|usual:|use_usual:)"))
     app.add_handler(CallbackQueryHandler(on_answer, pattern="^answer:"))
 

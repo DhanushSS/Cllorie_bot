@@ -35,6 +35,7 @@ CALORIE_MULTIPLIER = float(os.environ.get("CALORIE_MULTIPLIER", "1.0"))
 
 NUTRITION_DB_MIN_RATIO = float(os.environ.get("NUTRITION_DB_MIN_RATIO", "0.6"))
 ALLOWED_CHAT_ID = os.environ.get("ALLOWED_CHAT_ID", "").strip()
+MULTI_USER_ENABLED = os.environ.get("MULTI_USER_ENABLED", "false").lower() == "true"
 if not math.isfinite(CALORIE_MULTIPLIER) or CALORIE_MULTIPLIER <= 0:
     raise ValueError("CALORIE_MULTIPLIER must be a finite positive number")
 if not 0 <= NUTRITION_DB_MIN_RATIO <= 1:

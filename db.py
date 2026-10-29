@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 import config
@@ -32,6 +33,14 @@ def _conn() -> sqlite3.Connection:
     conn.execute("""CREATE TABLE IF NOT EXISTS meal_aliases(
         id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL,
         name TEXT NOT NULL, food_text TEXT NOT NULL, UNIQUE(chat_id, name)
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS users(
+        chat_id TEXT PRIMARY KEY, reminders INTEGER NOT NULL DEFAULT 0
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS user_food_cache(
+        chat_id TEXT NOT NULL, food_key TEXT NOT NULL, calories REAL,
+        protein REAL, category TEXT, notes TEXT, policy_version INTEGER NOT NULL DEFAULT 3,
+        PRIMARY KEY(chat_id, food_key)
     )""")
     conn.commit()
     return conn
@@ -140,34 +149,102 @@ def earliest_pending_meal(chat_id: str, date_str: str) -> str | None:
     return None
 
 
+def register_user(chat_id: str, reminders: bool = False) -> None:
+    conn = _conn()
+    conn.execute("INSERT OR IGNORE INTO users(chat_id,reminders) VALUES(?,?)", (chat_id, int(reminders)))
+    conn.commit()
+    conn.close()
+
+
+def is_registered(chat_id: str) -> bool:
+    conn = _conn()
+    found = conn.execute("SELECT 1 FROM users WHERE chat_id=?", (chat_id,)).fetchone()
+    conn.close()
+    return bool(found)
+
+
+def reminder_users() -> list[str]:
+    conn = _conn()
+    rows = conn.execute("SELECT chat_id FROM users WHERE reminders=1").fetchall()
+    conn.close()
+    return [row[0] for row in rows]
+
+
+def set_reminders(chat_id: str, enabled: bool) -> None:
+    conn = _conn()
+    conn.execute("UPDATE users SET reminders=? WHERE chat_id=?", (int(enabled), chat_id))
+    conn.commit()
+    conn.close()
+
+
+def reminders_enabled(chat_id: str) -> bool:
+    conn = _conn()
+    row = conn.execute("SELECT reminders FROM users WHERE chat_id=?", (chat_id,)).fetchone()
+    conn.close()
+    return bool(row and row[0])
+
+
+def get_entries_df(chat_id: str, start_date=None, end_date=None):
+    import pandas as pd
+    conn = _conn()
+    clauses = ["chat_id=?", "status='logged'"]
+    params = [chat_id]
+    if start_date:
+        clauses.append("date>=?")
+        params.append(start_date.isoformat())
+    if end_date:
+        clauses.append("date<=?")
+        params.append(end_date.isoformat())
+    rows = conn.execute("SELECT date,meal,food_text,category,calories,protein FROM meal_status WHERE " +
+                        " AND ".join(clauses) + " ORDER BY date,meal", params).fetchall()
+    conn.close()
+    df = pd.DataFrame(rows, columns=["Date", "Meal", "Food", "Category", "Calories", "Protein_g"])
+    if not df.empty:
+        df["Date"] = [date.fromisoformat(value) for value in df["Date"]]
+        df["Calories"] = pd.to_numeric(df["Calories"]).fillna(0)
+        df["Protein_g"] = pd.to_numeric(df["Protein_g"]).fillna(0)
+    return df
+
+
 # ---- food estimate cache (keeps repeat entries of the same food consistent) ----
 
 def food_cache_key(food_text: str) -> str:
     return " ".join(food_text.strip().lower().split())
 
 
-def get_cached_food(food_key: str):
+def get_cached_food(food_key: str, chat_id: str | None = None):
     conn = _conn()
-    row = conn.execute(
-        "SELECT calories, protein, category, notes, policy_version FROM food_cache WHERE food_key=?",
-        (food_key,),
-    ).fetchone()
+    if chat_id and chat_id != get_kv("chat_id"):
+        row = conn.execute("SELECT calories,protein,category,notes,policy_version FROM user_food_cache "
+                           "WHERE chat_id=? AND food_key=?", (chat_id, food_key)).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT calories, protein, category, notes, policy_version FROM food_cache WHERE food_key=?",
+            (food_key,),
+        ).fetchone()
     conn.close()
     if not row:
         return None
     return {"calories": row[0], "protein_g": row[1], "category": row[2], "notes": row[3], "policy_version": row[4]}
 
 
-def set_cached_food(food_key: str, calories: float, protein: float, category: str, notes: str) -> None:
+def set_cached_food(food_key: str, calories: float, protein: float, category: str, notes: str,
+                    chat_id: str | None = None) -> None:
     conn = _conn()
-    conn.execute(
-        """INSERT INTO food_cache(food_key, calories, protein, category, notes, policy_version)
-        VALUES(?,?,?,?,?,3)
-        ON CONFLICT(food_key) DO UPDATE SET
-            calories=excluded.calories, protein=excluded.protein,
-            category=excluded.category, notes=excluded.notes, policy_version=3""",
-        (food_key, calories, protein, category, notes),
-    )
+    if chat_id and chat_id != get_kv("chat_id"):
+        conn.execute("""INSERT INTO user_food_cache(chat_id,food_key,calories,protein,category,notes)
+            VALUES(?,?,?,?,?,?) ON CONFLICT(chat_id,food_key) DO UPDATE SET
+            calories=excluded.calories,protein=excluded.protein,category=excluded.category,notes=excluded.notes,
+            policy_version=3""", (chat_id, food_key, calories, protein, category, notes))
+    else:
+        conn.execute(
+            """INSERT INTO food_cache(food_key, calories, protein, category, notes, policy_version)
+            VALUES(?,?,?,?,?,3)
+            ON CONFLICT(food_key) DO UPDATE SET
+                calories=excluded.calories, protein=excluded.protein,
+                category=excluded.category, notes=excluded.notes, policy_version=3""",
+            (food_key, calories, protein, category, notes),
+        )
     conn.commit()
     conn.close()
 

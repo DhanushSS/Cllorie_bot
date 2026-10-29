@@ -47,6 +47,11 @@ def test_friends_get_separate_logs_reports_and_corrections(monkeypatch):
     assert "130 kcal" in a.message.reply_text.call_args.args[0]
     assert "No entries" in b.message.reply_text.call_args.args[0]
     sheets_client.get_entries_df.assert_not_called()
+    asyncio.run(bot.cmd_week(a, ca))
+    asyncio.run(bot.cmd_week(b, cb))
+    assert a.message.reply_photo.await_count == 1
+    assert b.message.reply_photo.await_count == 0
+    assert "No entries" in b.message.reply_text.call_args.args[0]
 
     ca.args = ["morning", "220", "9"]
     asyncio.run(bot.cmd_fix(a, ca))

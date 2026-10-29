@@ -17,6 +17,7 @@ HELP_TEXT = (
     "• Skip meal — move past the next unlogged meal.\n"
     "• My usuals — reuse meals you've asked me to remember.\n"
     "• /fix morning 450 20 — correct breakfast to 450 kcal and 20 g protein.\n"
+    "• /reminders on or /reminders off — choose whether I nudge you to log meals.\n"
     "• /cancel — leave test mode or cancel a follow-up.\n\n"
     "Your log goes breakfast → lunch → dinner. Estimates depend on the portion, "
     "so tell me if you had half, extra, or a different amount."

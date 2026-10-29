@@ -1,111 +1,240 @@
-# Telegram Calorie & Protein Tracker Bot
+# Cllorie Bot
 
-A personal Telegram bot that pings you at morning/afternoon/night, asks what you ate, estimates
-calories & protein with an NVIDIA-hosted LLM, logs everything to a Google Sheet, and gives you
-today/week/month reports with charts — right inside Telegram.
+Personal Telegram calorie and protein diary, hosted on Azure with outbound polling.
+The original owner's meals stay in Google Sheets. Each friend's meals and corrections
+are stored separately in SQLite, which also preserves pending questions and saved usuals.
+Default timezone is Asia/Kolkata.
 
-## How it behaves
+## Commands
 
-- Three daily check-ins (times configurable). It won't ask about the next meal until the current
-  one is logged **or** skipped.
-- If a dish is ambiguous (biryani, curry, sandwich, etc.) it asks "veg or non-veg?" with quick
-  tap buttons, then finishes the estimate.
-- `/skip` skips whatever meal is currently pending — e.g. wake up late, skip breakfast, and
-  immediately log lunch.
-- `/edit` lets you correct any meal you already logged today (overwrites that row in the sheet).
-- `/today`, `/week`, `/month` give you a text summary plus a calories+protein chart.
-- Meal logs are stored durably in Google Sheets (viewable/editable from your phone anytime).
-  A small local SQLite file just tracks "which meal is pending right now" — if it's ever wiped by
-  a redeploy, worst case today's flow just resets, your logged data is untouched.
+| Command | What it does |
+|---|---|
+| `/start`, `/help` | Register in a private chat and show help |
+| `/test [food]` | Try the same estimation pipeline without saving meals, estimates or usuals |
+| `/cancel` | Leave test mode or cancel a pending question |
+| `/usuals` | Preview your saved usual meals before logging |
+| `/remember name`, `/forget name` | Explicitly save or remove a nickname for your last logged meal |
+| `/skip` | Skip the earliest pending meal and unlock the next meal |
+| `/edit` | Replace one of today's logged meals, including after clarification |
+| `/fix morning 650 25` | Set breakfast's final totals to 650 kcal and 25 g protein; update its cache |
+| `/today` | Today's text summary |
+| `/week`, `/month` | Last 7 / 30 days text summary and chart when data exists |
+| `/reminders on`, `/reminders off` | Opt in to or turn off meal reminders |
 
-## 1. Create the Telegram bot
+When `MULTI_USER_ENABLED=true`, anyone who opens a private chat and sends `/start`
+can use the bot. Each person can read and change only their own meals, usuals,
+corrections and reports. The original owner's Sheet remains exclusive to that owner;
+friends' reports come from their separate database records. Friends' reminders are
+off until they send `/reminders on`. A single timezone and reminder schedule are
+shared by this version. Open registration can increase NVIDIA API usage.
 
-1. Message **@BotFather** on Telegram → `/newbot` → follow the prompts.
-2. Copy the token it gives you (looks like `123456789:AA...`).
+Meals must be completed
+or skipped in order: morning, afternoon, night. Ambiguous foods get a relevant type or portion
+question, with answer buttons when available. A separate portion check prevents
+common variable-serving dishes (rice, biryani, curry, dal and others) from being
+saved on an automatic guess when the user has supplied no recognized amount.
+It ignores amounts appearing only in the bot's own questions. Estimates are approximate and depend on the described portion.
 
-## 2. Get an NVIDIA NIM API key
+The cache is checked first. For uncached foods the AI resolves ambiguity, then usable
+API Ninjas nutrients take priority unless database calories are **strictly below**
+`NUTRITION_DB_MIN_RATIO × AI calories`. In that case the AI is used with the note
+“AI estimate: portion-adjusted.” At equality the database wins. Missing or placeholder
+nutrients fall back to AI; unusable AI and database results are not logged or cached.
+Raw calories are cached; the calorie multiplier applies once when saving/displaying.
+`/fix` accepts final calories and divides them by the multiplier for the cache.
 
-1. Go to https://build.nvidia.com and sign in.
-2. Get an API key (starts with `nvapi-`) — NVIDIA gives free credits for their hosted models.
-3. Pick a solid instruction-following chat model, e.g. `meta/llama-3.3-70b-instruct` (already set
-   as the default in `.env.example`). You can browse other available chat models on the site and
-   swap `NVIDIA_MODEL` if you prefer another.
+API Ninjas currently marks calories and protein as premium fields. The three live
+checks on 18 October 2026 returned premium-only placeholders, so this deployment can
+leave its optional key empty and use NVIDIA plus the cache. No paid upgrade is needed.
+Source: https://api-ninjas.com/api/nutrition
 
-## 3. Set up the Google Sheet
+## Configuration
 
-1. Create a new Google Sheet (any name). Grab the **Sheet ID** from its URL:
-   `https://docs.google.com/spreadsheets/d/`**`THIS_PART`**`/edit`
-2. In Google Cloud Console: create a project → enable the **Google Sheets API** → create a
-   **Service Account** → create a JSON key for it and download it.
-3. Open the downloaded JSON, find `client_email`, and **share your Google Sheet** with that email
-   address as an **Editor**.
-4. Paste the entire JSON file's contents as a single line into `GOOGLE_SERVICE_ACCOUNT_JSON` in
-   your `.env`.
+Copy `.env.example` to `.env` and edit it privately. Never paste credentials in chat,
+shell arguments or git. Google JSON must be on one line. Docker's env-file format uses
+literal values: do not wrap the JSON or other values in outer shell quotes.
 
-## 4. Run it locally first (recommended)
+| Variable | Default / purpose |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Required, replacement token from BotFather |
+| `NVIDIA_API_KEY` | Required NVIDIA API key |
+| `NVIDIA_THINKING` | `true`, reasoning enabled |
+| `NVIDIA_TIMEOUT_SECONDS` | `240`, request timeout |
+| `NVIDIA_MAX_TOKENS` | `4096`, room for reasoning and final JSON |
+| `NVIDIA_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b` |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Required service-account JSON, one line |
+| `GOOGLE_SHEET_ID` | Required sheet ID; share sheet with the service account as Editor |
+| `GOOGLE_SHEET_TAB` | `Logs` |
+| `NUTRITION_API_KEY` | Optional; empty disables API Ninjas |
+| `CALORIE_MULTIPLIER` | `1.0` (unadjusted), finite and greater than zero |
+| `NUTRITION_DB_MIN_RATIO` | `0.6`, between 0 and 1 |
+| `ALLOWED_CHAT_ID` | Optional owner chat ID; restricts ownership claim in multi-user mode |
+| `MULTI_USER_ENABLED` | `false` by default; set `true` to allow private-chat registration |
+| `TIMEZONE` | `Asia/Kolkata` |
+| `REMINDER_MORNING` | `08:30` |
+| `REMINDER_AFTERNOON` | `14:00` |
+| `REMINDER_NIGHT` | `20:30` |
+| `DB_PATH` | `/data/bot_state.db` in Docker, `bot_state.db` otherwise |
+
+Google Sheet column order is unchanged:
+`Date, Meal, Food, Category, Calories, Protein_g, LoggedAt`.
+Both Date and LoggedAt use the configured timezone.
+The default is Nemotron 3 Ultra 550B through NVIDIA's API, with thinking enabled
+and a 240-second timeout. Truncated output is rejected rather than partially parsed. The owner prefers careful handling over low latency.
+A greeting is handled locally and never sent for estimation or cached as food.
+For other uncached messages the model must explicitly confirm `is_food=true` before
+any estimate or dietary clarification is accepted. Missing/false classification,
+invalid nutrients and provider errors leave the meal unsaved. Network calls run
+off the event loop so reminders remain responsive while inference is pending.
+Totals for real foods are estimates; describe portions and use `/fix` for known values.
+
+Greetings open a friendly guide and persistent buttons for logging, testing, reports,
+editing, correcting totals, skipping and saved usuals. Mixed greetings plus food still
+reach the estimator. Test mode is clearly labelled and stays on until Log meal,
+Back to logging, /cancel or a new local day. Reports remain available during tests;
+real mutations require leaving test mode. Pending real edits survive a test session.
+
+The bot remembers only explicit meal nicknames and corrections. This is saved personal
+memory, not model training or automatically learned nutrition facts. Usuals are shown
+with their original portion for confirmation before logging. Old automatic estimates
+are rechecked under the new portion policy; manual corrections remain usable.
+
+The 19 October 2026 deployment switches new estimates from 1.3 to 1.0. Historical
+Sheet rows and saved meal totals remain unchanged. A one-time backed-up migration
+preserves previously corrected final calories in the cache when changing the factor.
+
+Multi-user mode is a small-group first version. Messages are processed in order,
+so a long nutrition lookup can delay a friend's reply. The existing VM and model
+quota have not been load-tested for a large group. Users can request their data
+from the operator; self-service export and deletion are not yet in the bot.
+
+## Restaurant nutrition and reasoning
+
+Explicit chicken, mutton, fish and egg descriptions resolve as non-veg; paneer and
+plant-based substitutes are handled appropriately. A biryani order count is not
+assumed to mean one cup. The bot asks for the amount eaten before estimating.
+
+The active path is now restaurant-neutral: `nvidia_client.py` identifies any named
+restaurant and dish, then `nutrition_research.py` searches via `web_nutrition.py`.
+India is the default market unless another country is explicit. DDGS searches Bing
+(with a bounded Yahoo fallback), opens public pages and follows nutrition PDF links.
+No paid search account or brand allowlist is required. Search engines/sites can
+still block requests or lack useful nutrition; successful coverage is not guaranteed.
+
+The larger NVIDIA Ultra model reasons over fetched page/PDF excerpts and checks
+country, variant, size/crust, whole-order versus slice/per-100g basis, and all named
+combo components. Published totals require source IDs and verbatim row/header/
+serving evidence. The application validates the quotes and nutrient numbers against
+fetched text, then calculates scaled totals itself. A separate reasoning call checks
+nutrient columns, country/variant and serving arithmetic before a published match
+is accepted. Unverified third-party publishers cannot establish a published match. Matching is still model-assisted;
+this does not independently verify restaurant recipes or guarantee ±10% accuracy.
+Published matches include source URLs, serving assumptions and retrieval date.
+Insufficient evidence falls back to a clearly labelled recipe estimate, or a focused
+question if the food/portion is still unclear. Search failures are stated explicitly.
+
+Automatic guesses are rechecked so an old cache cannot bypass a new restaurant
+search. Explicit user corrections remain authoritative; usuals and historical logs
+are preserved. Generic API nutrition cannot overwrite restaurant research. The old
+`restaurant_nutrition.py` is retained only as a legacy snapshot, not used by the bot.
+This is on-demand research and explicit personal memory, not automatic training.
+
+Public-page retrieval blocks private/link-local addresses, pins validated IPs,
+revalidates redirects, and bounds page sizes, fetches and PDF extraction. Web text
+is untrusted data. PDF extraction runs separately with a deadline and a Linux memory
+limit. A public-page cache retains successfully read pages for up to 7 days (100 pages
+maximum), separately from meal records. Search still runs afresh. If a live read
+fails, a cached page can be used with its original read date and an explicit label;
+expired pages cannot establish a match. This cache can also be seeded with public
+pages fetched from another authorized environment when a publisher blocks the VM.
+Search receives only the extracted restaurant, dish and country, not chat IDs
+or the user's full conversation. `/test` uses this same research pipeline without
+writing meals, Sheets, aliases or the automatic food cache.
+
+## Azure setup
+
+Use an existing VM with capacity or a small permitted Ubuntu LTS/Debian VM. Check
+https://azure.microsoft.com/pricing/calculator/ for the region and size. SSH key
+authentication only; inbound TCP 22 restricted to your current public IP. No bot port
+is needed. Do not start polling until the old Railway/local instance is stopped.
+
+On the VM:
 
 ```bash
-cd telegram-calorie-bot
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+sudo apt update
+sudo apt install -y docker.io git
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"
+# Log out and in to apply Docker group membership.
+sudo mkdir -p /opt/calorie-bot
+sudo chown "$USER:$USER" /opt/calorie-bot
+git clone https://github.com/DhanushSS/Cllorie_bot.git /opt/calorie-bot
+cd /opt/calorie-bot
+# Select the reviewed deployment branch/commit before running.
 cp .env.example .env
-# now fill in .env with your real values
-python bot.py
+chmod 600 .env
+nano .env
+./deploy.sh
 ```
 
-Message your bot `/start` on Telegram. It should greet you and start scheduling reminders.
-Test `/skip`, `/edit`, `/today` etc. Once it feels right, deploy it so it survives your laptop
-being off.
+For a VM with about 1 GB RAM, add 1–2 GB swap if none exists. Never overwrite an
+existing swap file. Example for a new `/swapfile-calorie-bot`:
 
-## 5. Deploy to the cloud (always-on)
+```bash
+sudo fallocate -l 2G /swapfile-calorie-bot
+sudo chmod 600 /swapfile-calorie-bot
+sudo mkswap /swapfile-calorie-bot
+sudo swapon /swapfile-calorie-bot
+echo '/swapfile-calorie-bot none swap sw 0 0' | sudo tee -a /etc/fstab
+```
 
-This bot uses **polling** (not webhooks), so it just needs to be a long-running process — no
-public URL/port required. A couple of good free/cheap options:
+`deploy.sh` pulls the current branch with fast-forward only, builds before stopping
+the running bot, keeps its previous image, and recreates exactly one container with
+`--restart unless-stopped` and the named `calorie-bot-data` volume. Startup failures
+restore the previous image when one exists. The 12-second startup check is a process
+check, not proof of Telegram delivery; verify commands and the next reminder too.
 
-### Option A: Railway (simplest)
+## Operate / rollback
 
-1. Push this folder to a GitHub repo.
-2. On https://railway.app → New Project → Deploy from GitHub repo → pick your repo. Railway
-   auto-detects the `Dockerfile`.
-3. In the project's **Variables** tab, add every key from your `.env` (paste the JSON for
-   `GOOGLE_SERVICE_ACCOUNT_JSON` as one line, same as locally).
-4. Deploy. Check the **Deployments → Logs** tab for `Bot starting (polling)...`.
-5. Message `/start` to your bot from your phone — it now runs independent of your laptop.
+```bash
+cd /opt/calorie-bot
+./deploy.sh
+docker logs --tail 50 calorie-bot
+docker restart calorie-bot
+docker inspect -f '{{.RestartCount}}' calorie-bot
+```
 
-   Note: Railway's free trial credit runs out and then bills small usage-based amounts
-   (this bot is lightweight — should be low single-digit dollars a month at most). Check their
-   current pricing page before committing.
+Rollback (after at least one successful update):
 
-### Option B: Fly.io
+```bash
+docker stop -t 30 calorie-bot
+docker rm calorie-bot
+docker run -d --name calorie-bot --restart unless-stopped \
+  --env-file /opt/calorie-bot/.env -e DB_PATH=/data/bot_state.db \
+  -v calorie-bot-data:/data --log-opt max-size=10m --log-opt max-file=3 \
+  calorie-bot:previous
+```
 
-1. Install `flyctl`, run `fly launch` inside this folder (it'll detect the Dockerfile — say no to
-   a Postgres/Redis add-on, you don't need one).
-2. Set secrets: `fly secrets set TELEGRAM_BOT_TOKEN=... NVIDIA_API_KEY=... GOOGLE_SHEET_ID=... GOOGLE_SHEET_TAB=Logs TIMEZONE=Asia/Kolkata GOOGLE_SERVICE_ACCOUNT_JSON='...'`
-3. `fly deploy`. Fly's small free-tier VM allowance is normally enough for one always-on
-   lightweight worker like this — check their current free-tier terms, they do change.
+Never delete the data volume during redeployment. Stop before moving the SQLite file;
+use SQLite's backup API if copying a live local database. Ownership restored from the
+volume automatically reschedules all three reminders without another `/start`.
 
-### Option C: Render
+## Tests
 
-Use a **Background Worker** service (not a Web Service — web services on Render's free tier spin
-down on inactivity, which would silently kill your reminders). Point it at this repo with build
-command `pip install -r requirements.txt` and start command `python bot.py`, and add the same
-environment variables.
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m py_compile *.py tests/*.py
+.venv/bin/python -m pytest -q
+```
 
-## Files
+Tests use temporary SQLite files and mocked external services. Live checks require
+separate credentials and explicit observations: phone commands, Sheet writes, restart,
+VM reboot and arrival of a scheduled reminder. Test passes alone do not prove those.
 
-| File | Purpose |
-|---|---|
-| `bot.py` | Telegram handlers, scheduling, conversation flow |
-| `config.py` | Loads all settings from environment variables |
-| `db.py` | SQLite: tracks which meal is currently pending, per day |
-| `nvidia_client.py` | Calls the NVIDIA NIM API to estimate calories/protein, flags ambiguous dishes |
-| `sheets_client.py` | Reads/writes the Google Sheet |
-| `charts.py` | Builds the calorie/protein chart + text summaries for reports |
+## Verification and next steps
 
-## Customizing
-
-- Change reminder times: edit `REMINDER_MORNING` / `REMINDER_AFTERNOON` / `REMINDER_NIGHT` in
-  your env (24h `HH:MM`, in the `TIMEZONE` you set).
-- Change the estimation model: edit `NVIDIA_MODEL`.
-- Add a 4th meal slot (e.g. snacks): duplicate the `morning`/`Breakfast` pattern in
-  `config.MEALS`/`MEAL_LABELS` and `schedule_reminders`.
+See [deployment and verification status](docs/DEPLOYMENT_STATUS.txt) for the deployed
+revision, 205 passing checks, live-source test and remaining limits.
+The [multi-user assessment](docs/MULTI_USER_ASSESSMENT.txt) describes the isolation
+work needed before inviting other people. Private credentials and data stay off GitHub.

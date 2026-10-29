@@ -6,3 +6,6 @@ pandas==2.2.2
 matplotlib==3.10.5
 python-dotenv==1.0.1
 requests==2.32.3
+ddgs==9.16.0
+beautifulsoup4==4.15.0
+pypdf==6.21.1

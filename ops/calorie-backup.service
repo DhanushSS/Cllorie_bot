@@ -1,0 +1,15 @@
+[Unit]
+Description=Encrypted Cllorie Bot offsite backup
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=offerbot
+SupplementaryGroups=docker
+WorkingDirectory=/opt/calorie-bot
+ExecStart=/opt/calorie-bot/backup_to_github.sh
+TimeoutStartSec=300
+UMask=0077
+StandardOutput=append:/opt/calorie-bot/backups/backup.log
+StandardError=append:/opt/calorie-bot/backups/backup.log

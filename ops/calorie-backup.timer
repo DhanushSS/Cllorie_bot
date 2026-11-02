@@ -1,0 +1,10 @@
+[Unit]
+Description=Back up Cllorie Bot every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:00:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

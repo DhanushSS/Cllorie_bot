@@ -20,6 +20,18 @@ that snapshot may be lost. Public nutrition-page caches are regenerated and are
 not backed up. The Google Sheet also remains an independent copy of owner logs.
 All users' database records, reminders, corrections and usuals are included.
 
+The installed systemd units are versioned under `ops/`. Reinstall them into
+`/etc/systemd/system/` on a replacement VM and enable `calorie-backup.timer`
+after configuring `backups/recovery-public.pem`, the repository-scoped
+`backups/github_key`, pinned `backups/known_hosts`, and `backups/repository`.
+Generate a new deploy key on the replacement host and authorize it only for the
+private backup repository; the recovery private key should stay off the server.
+
+On 2 November 2026 the snapshot was pushed, downloaded from GitHub, decrypted,
+and checked for SQLite integrity, Sheet rows, configuration and source presence.
+The installed service exited successfully and its six-hour timer was enabled.
+This verified recovery-file readability; it did not start a second live poller.
+
 Monitor `/opt/calorie-bot/backups/last-success` and
 `/opt/calorie-bot/backups/backup.log`. Backup failure is logged but does not send
 notifications. This is a small-group setup; verify backup growth and repository

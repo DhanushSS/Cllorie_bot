@@ -103,8 +103,10 @@ The 19 October 2026 deployment switches new estimates from 1.3 to 1.0. Historica
 Sheet rows and saved meal totals remain unchanged. A one-time backed-up migration
 preserves previously corrected final calories in the cache when changing the factor.
 
-Multi-user mode is a small-group first version. Messages are processed in order,
-so a long nutrition lookup can delay a friend's reply. The existing VM and model
+Multi-user mode is a small-group first version. Up to eight updates can be handled concurrently, with at most two nutrition
+lookups at once. Each chat has one active request; repeated messages get a busy
+reply instead of logging duplicate meals. Long checks send progress replies every
+45 seconds. Temporary provider errors are retried once using the same model. The existing VM and model
 quota have not been load-tested for a large group. Users can request their data
 from the operator; self-service export and deletion are not yet in the bot.
 

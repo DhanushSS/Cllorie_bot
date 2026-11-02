@@ -6,6 +6,7 @@ import secrets
 from types import SimpleNamespace
 import re
 from functools import wraps
+from contextvars import ContextVar
 from datetime import datetime, date, timedelta
 
 from openai import APIConnectionError, APIStatusError
@@ -49,6 +50,9 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("calorie-bot")
 
 HELP_TEXT = conversation.HELP_TEXT
+_busy_chats = set()
+_active_chat = ContextVar('active_chat', default=None)
+_provider_slots = asyncio.Semaphore(2)
 
 
 def today_local() -> date:
@@ -83,8 +87,44 @@ def owner_only(func):
             if update.callback_query:
                 await update.callback_query.answer()
             return
-        return await func(update, context)
+        chat_id = str(update.effective_chat.id)
+        if _active_chat.get() == chat_id:
+            return await func(update, context)
+        if chat_id in _busy_chats:
+            text = "I'm still checking your last request. I'll reply here when it's ready — you don't need to send it again."
+            if update.callback_query:
+                await update.callback_query.answer(text=text[:200], show_alert=True)
+            else:
+                await update.message.reply_text(text)
+            return
+        _busy_chats.add(chat_id)
+        token = _active_chat.set(chat_id)
+        try:
+            return await func(update, context)
+        finally:
+            _active_chat.reset(token)
+            _busy_chats.discard(chat_id)
     return guarded
+
+
+async def estimate_with_updates(label, food_text, chat_id, context):
+    if _provider_slots.locked():
+        await context.bot.send_message(chat_id=int(chat_id), text="A couple of food checks are ahead of yours. Your request is queued.")
+    async with _provider_slots:
+        for attempt in range(2):
+            task = asyncio.create_task(asyncio.to_thread(nutrition_research.estimate, label, food_text))
+            try:
+                while True:
+                    done, _ = await asyncio.wait({task}, timeout=45)
+                    if done:
+                        return task.result()
+                    await context.bot.send_message(chat_id=int(chat_id), text="Still checking the food and sources. Nothing has been saved yet.")
+            except APIStatusError as exc:
+                if attempt == 0 and exc.status_code in (429, 500, 502, 503, 504):
+                    await context.bot.send_message(chat_id=int(chat_id), text="The nutrition service is busy. I'm retrying once with the same model.")
+                    await asyncio.sleep(3)
+                    continue
+                raise
 
 
 def is_conversation(text):
@@ -365,7 +405,7 @@ async def finalize_entry(
             await context.bot.send_chat_action(chat_id=int(chat_id), action="typing")
             await context.bot.send_message(chat_id=int(chat_id), text=("Test only — checking that food and portion…" if test_mode else "Got it — checking the food, portion and recipe. I may take a little longer to work this out."))
             try:
-                result = await asyncio.to_thread(nutrition_research.estimate, label, food_text)
+                result = await estimate_with_updates(label, food_text, chat_id, context)
             except (APIConnectionError, APIStatusError) as exc:
                 logger.warning("NVIDIA estimate unavailable (%s)", type(exc).__name__)
                 await context.bot.send_message(
@@ -945,7 +985,7 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
             pass
 
 def main() -> None:
-    app = ApplicationBuilder().token(config.TELEGRAM_BOT_TOKEN).post_init(post_init).build()
+    app = ApplicationBuilder().token(config.TELEGRAM_BOT_TOKEN).concurrent_updates(8).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))

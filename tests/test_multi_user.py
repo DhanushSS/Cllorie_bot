@@ -93,3 +93,41 @@ def test_reminder_opt_in_is_per_user(monkeypatch):
     ctx.args = ["off"]
     asyncio.run(bot.cmd_reminders(update, ctx))
     assert not db.reminders_enabled("99")
+
+
+def test_busy_user_does_not_block_other_users(monkeypatch):
+    monkeypatch.setattr(config, 'MULTI_USER_ENABLED', True)
+    db.register_user('99')
+    db.register_user('100')
+    first, second = friend_update(99), friend_update(100)
+    ctx = friend_context()
+    async def check():
+        entered, release = asyncio.Event(), asyncio.Event()
+        @bot.owner_only
+        async def slow(update, context):
+            entered.set()
+            await release.wait()
+        task = asyncio.create_task(slow(first, ctx))
+        await entered.wait()
+        await bot.cmd_help(first, ctx)
+        assert 'still checking' in first.message.reply_text.call_args.args[0]
+        await bot.cmd_help(second, ctx)
+        assert 'calories' in second.message.reply_text.call_args.args[0]
+        release.set()
+        await task
+        assert '99' not in bot._busy_chats
+    asyncio.run(check())
+
+
+def test_temporary_provider_error_retries_same_pipeline(monkeypatch):
+    import httpx
+    from openai import APIStatusError
+    response = httpx.Response(503, request=httpx.Request('POST', 'https://example.test'))
+    estimate = Mock(side_effect=[APIStatusError('busy', response=response, body=None), {'calories':105}])
+    monkeypatch.setattr(bot.nutrition_research, 'estimate', estimate)
+    monkeypatch.setattr(bot.asyncio, 'sleep', AsyncMock())
+    ctx = friend_context()
+    result = asyncio.run(bot.estimate_with_updates('Breakfast', 'one banana', '99', ctx))
+    assert result['calories'] == 105
+    assert estimate.call_count == 2
+    assert 'retrying once' in ctx.bot.send_message.call_args.kwargs['text']

@@ -240,3 +240,13 @@ See [deployment and verification status](docs/DEPLOYMENT_STATUS.txt) for the dep
 revision, 205 passing checks, live-source test and remaining limits.
 The [multi-user assessment](docs/MULTI_USER_ASSESSMENT.txt) describes the isolation
 work needed before inviting other people. Private credentials and data stay off GitHub.
+
+## Instant usuals
+
+Saved usuals retain final calories, protein and category for the exact food and
+portion. Confirming Log this meal reuses these totals without model or web calls.
+The preview displays the saved values. Recheck estimate runs a fresh /test without
+changing the usual. A changed food/portion typed as a new message is estimated
+normally. Corrections update matching usuals within that user only. Legacy usuals
+are migrated from that user’s most recent exact-food log when available; otherwise
+they are estimated on first logging and stored for future instant reuse.

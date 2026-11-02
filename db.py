@@ -34,6 +34,19 @@ def _conn() -> sqlite3.Connection:
         id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL,
         name TEXT NOT NULL, food_text TEXT NOT NULL, UNIQUE(chat_id, name)
     )""")
+    alias_columns = {row[1] for row in conn.execute('PRAGMA table_info(meal_aliases)')}
+    migrate_usuals = 'calories' not in alias_columns
+    for column, kind in [('calories', 'REAL'), ('protein', 'REAL'), ('category', 'TEXT')]:
+        if column not in alias_columns:
+            conn.execute(f'ALTER TABLE meal_aliases ADD COLUMN {column} {kind}')
+    if migrate_usuals:
+        for alias_id, chat_id, food in conn.execute('SELECT id,chat_id,food_text FROM meal_aliases').fetchall():
+            row = conn.execute("""SELECT calories,protein,category FROM meal_status
+                WHERE chat_id=? AND food_text=? AND status='logged' AND calories IS NOT NULL AND protein IS NOT NULL
+                ORDER BY date DESC, CASE meal WHEN 'night' THEN 3 WHEN 'afternoon' THEN 2 ELSE 1 END DESC LIMIT 1""",
+                (chat_id, food)).fetchone()
+            if row:
+                conn.execute('UPDATE meal_aliases SET calories=?,protein=?,category=? WHERE id=?', (*row, alias_id))
     conn.execute("""CREATE TABLE IF NOT EXISTS users(
         chat_id TEXT PRIMARY KEY, reminders INTEGER NOT NULL DEFAULT 0
     )""")
@@ -252,17 +265,31 @@ def set_cached_food(food_key: str, calories: float, protein: float, category: st
 # Explicit, user-scoped memory. Never infer personal habits from guesses.
 def remember_meal(chat_id, name, food_text):
     conn = _conn()
-    conn.execute("""INSERT INTO meal_aliases(chat_id,name,food_text) VALUES(?,?,?)
-        ON CONFLICT(chat_id,name) DO UPDATE SET food_text=excluded.food_text""", (chat_id,name,food_text))
+    row = conn.execute("""SELECT calories,protein,category FROM meal_status
+        WHERE chat_id=? AND food_text=? AND status='logged' AND calories IS NOT NULL AND protein IS NOT NULL
+        ORDER BY date DESC, CASE meal WHEN 'night' THEN 3 WHEN 'afternoon' THEN 2 ELSE 1 END DESC LIMIT 1""",
+        (chat_id, food_text)).fetchone() or (None, None, None)
+    conn.execute("""INSERT INTO meal_aliases(chat_id,name,food_text,calories,protein,category) VALUES(?,?,?,?,?,?)
+        ON CONFLICT(chat_id,name) DO UPDATE SET food_text=excluded.food_text,
+        calories=excluded.calories,protein=excluded.protein,category=excluded.category""", (chat_id,name,food_text,*row))
     conn.commit()
     conn.close()
 
 
 def list_usuals(chat_id):
     conn = _conn()
-    rows = conn.execute("SELECT id,name,food_text FROM meal_aliases WHERE chat_id=? ORDER BY name", (chat_id,)).fetchall()
+    rows = conn.execute("SELECT id,name,food_text,calories,protein,category FROM meal_aliases WHERE chat_id=? ORDER BY name", (chat_id,)).fetchall()
     conn.close()
-    return [dict(id=r[0],name=r[1],food_text=r[2]) for r in rows]
+    return [dict(id=r[0],name=r[1],food_text=r[2],calories=r[3],protein=r[4],category=r[5]) for r in rows]
+
+
+def update_usual_totals(chat_id, food_text, calories, protein, category, missing_only=False):
+    conn = _conn()
+    conn.execute('UPDATE meal_aliases SET calories=?,protein=?,category=? WHERE chat_id=? AND food_text=?' +
+                 (' AND (calories IS NULL OR protein IS NULL)' if missing_only else ''),
+                 (calories, protein, category, chat_id, food_text))
+    conn.commit()
+    conn.close()
 
 
 def forget_meal(chat_id, name):

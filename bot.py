@@ -381,6 +381,7 @@ async def finalize_entry(
     is_edit: bool,
     result: dict | None = None,
     test_mode: bool = False,
+    saved_usual: dict | None = None,
 ) -> None:
     label = config.MEAL_LABELS[meal]
     if is_conversation(food_text):
@@ -390,9 +391,17 @@ async def finalize_entry(
 
     cache_key = db.food_cache_key(food_text)
     cached = db.get_cached_food(cache_key, chat_id=chat_id)
+    reused_usual = False
+    if saved_usual is not None:
+        cal = nutrition_api.nutrient(saved_usual.get('calories'))
+        pro = nutrition_api.nutrient(saved_usual.get('protein'))
+        if cal is not None and cal > 0 and pro is not None:
+            reused_usual = True
+            cached = dict(calories=cal / config.CALORIE_MULTIPLIER, protein_g=pro,
+                          category=saved_usual.get('category') or 'unknown', notes='Saved usual totals for the same food and portion. No new estimate.')
     # Reclassify each new message so arbitrary restaurant names always trigger
     # fresh research. Only explicit user corrections bypass automatic analysis.
-    if cached and cached.get("notes") != "manually corrected":
+    if cached and not reused_usual and cached.get("notes") != "manually corrected":
         cached = None
     if cached:
         calories = cached["calories"]
@@ -512,6 +521,7 @@ async def finalize_entry(
             await asyncio.to_thread(sheets_client.append_entry, today, meal, food_text, category, calories, protein)
 
     db.upsert_meal_status(chat_id, today, meal, "logged", food_text, category, calories, protein)
+    db.update_usual_totals(chat_id, food_text, calories, protein, category, missing_only=True)
     db.clear_pending_clarification(chat_id)
     db.delete_kv(f"fix_pending:{chat_id}")
     db.delete_kv(f"edit_target:{chat_id}")
@@ -703,6 +713,7 @@ async def cmd_fix(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if _is_owner(chat_id):
         await asyncio.to_thread(sheets_client.update_entry, today, meal, food, category, calories, protein)
     db.upsert_meal_status(chat_id, today, meal, "logged", food, category, calories, protein)
+    db.update_usual_totals(chat_id, food, calories, protein, category)
     db.set_cached_food(db.food_cache_key(food), calories / config.CALORIE_MULTIPLIER,
                        protein, category, "manually corrected", chat_id=chat_id)
     db.clear_pending_clarification(chat_id)
@@ -788,10 +799,12 @@ async def cmd_usuals(update, context):
 async def show_usual(update, item):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton('Log this meal', callback_data=f"use_usual:log:{item['id']}"),
-         InlineKeyboardButton('Test it first', callback_data=f"use_usual:test:{item['id']}")],
+         InlineKeyboardButton('Recheck estimate', callback_data=f"use_usual:test:{item['id']}")],
         [InlineKeyboardButton('Cancel', callback_data='nav_cancel')],
     ])
-    await update.message.reply_text(f"Your usual {item['name']}:\n{conversation.food_summary(item['food_text'])}\n\nSame amount this time? If it changed, just type the new meal and quantity instead.", reply_markup=keyboard)
+    cal, pro = nutrition_api.nutrient(item.get('calories')), nutrition_api.nutrient(item.get('protein'))
+    totals = f"\nSaved totals: {cal:g} kcal · {pro:g} g protein" if cal is not None and pro is not None else "\nNo saved totals yet — I'll estimate this once when you log it."
+    await update.message.reply_text(f"Your usual {item['name']}:\n{conversation.food_summary(item['food_text'])}{totals}\n\nSame amount this time? If it changed, just type the new meal and quantity instead.", reply_markup=keyboard)
 
 
 @owner_only
@@ -960,7 +973,7 @@ async def on_navigation(update, context):
                 is_edit = edit_date == today and edit_meal in config.MEALS
                 meal = edit_meal if is_edit else db.earliest_pending_meal(chat_id, today)
                 if meal:
-                    await finalize_entry(chat_id, today, meal, item['food_text'], context, is_edit)
+                    await finalize_entry(chat_id, today, meal, item['food_text'], context, is_edit, saved_usual=item)
                 else:
                     await query.message.reply_text("Today's meals are covered. Use Edit meal to replace one.")
     except Exception:

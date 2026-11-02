@@ -173,6 +173,41 @@ def test_remember_and_recall_require_confirmation(update,ctx):
     assert len(update.message.reply_text.call_args.kwargs['reply_markup'].inline_keyboard[0])==2
 
 
+def test_usual_logs_saved_totals_without_estimation(update,ctx,monkeypatch):
+    db.upsert_meal_status('42','2020-01-01','morning','logged','250 ml ragi malt','veg',275,8)
+    db.remember_meal('42','ragi malt','250 ml ragi malt')
+    item=db.list_usuals('42')[0]
+    monkeypatch.setattr(bot.nutrition_research,'estimate',Mock(side_effect=AssertionError('must reuse totals')))
+    run(bot.on_navigation(callback(update,f"use_usual:log:{item['id']}"),ctx))
+    entry=db.get_day_status('42',bot.today_local().isoformat())['morning']
+    assert (entry['calories'],entry['protein'])==(275,8)
+    assert 'Saved usual totals' in ctx.bot.send_message.call_args.kwargs['text']
+    sheets_client.append_entry.assert_called_once()
+
+
+def test_correction_updates_only_users_matching_usual(update,ctx):
+    day=bot.today_local().isoformat()
+    for who in ['42','99']:
+        db.upsert_meal_status(who,day,'morning','logged','250 ml ragi malt','veg',275,8)
+        db.remember_meal(who,'ragi malt','250 ml ragi malt')
+    ctx.args=['morning','300','10']
+    run(bot.cmd_fix(update,ctx))
+    assert db.list_usuals('42')[0]['calories']==300
+    assert db.list_usuals('99')[0]['calories']==275
+
+
+def test_legacy_usual_migrates_from_own_history():
+    import sqlite3
+    with sqlite3.connect(config.DB_PATH) as c:
+        c.execute("INSERT INTO meal_status VALUES('42','2020-01-01','morning','logged','ragi malt','veg',200,6)")
+        c.execute('DROP TABLE meal_aliases')
+        c.execute('CREATE TABLE meal_aliases(id INTEGER PRIMARY KEY,chat_id TEXT,name TEXT,food_text TEXT,UNIQUE(chat_id,name))')
+        c.execute("INSERT INTO meal_aliases VALUES(1,'42','ragi','ragi malt')")
+        c.execute("INSERT INTO meal_aliases VALUES(2,'99','ragi','ragi malt')")
+    assert db.list_usuals('42')[0]['calories']==200
+    assert db.list_usuals('99')[0]['calories'] is None
+
+
 def test_usual_is_private_and_forgetting_keeps_history(update,ctx):
     db.remember_meal('42','breakfast','2 idlis')
     db.remember_meal('99','breakfast','other meal')

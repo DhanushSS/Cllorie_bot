@@ -1,3 +1,7 @@
+UPDATE — 2 November 2026: private-chat multi-user mode is deployed.
+See DEPLOYMENT_STATUS.txt and README.md for current behavior and limits.
+The assessment below is the historical pre-implementation plan.
+
 CLLORIE BOT — MULTI-USER ASSESSMENT
 19 October 2026
 

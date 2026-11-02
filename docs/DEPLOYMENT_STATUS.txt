@@ -1,3 +1,20 @@
+MULTI-USER UPDATE — 2 November 2026
+
+Deployed application: 219dfda. MULTI_USER_ENABLED=true on Azure.
+Private-chat registration is available through /start. Friends have separate
+meal records, reports, usuals and corrections; only the original owner uses
+the existing Google Sheet. New users opt in with /reminders on.
+
+Validation: 208 local automated tests passed during implementation; deployed
+image isolation smoke passed with two synthetic users and temporary state.
+Live Telegram authentication passed, owner state was preserved, and the
+container was running with zero restarts, no traceback or polling conflict.
+The live database was backed up before deployment. Phone-account interaction
+still requires user observation. Processing is serial; large-group capacity
+has not been established. All users currently share Asia/Kolkata time.
+
+Previous release record follows:
+
 DEPLOYMENT AND VERIFICATION — 19 October 2026
 
 Deployed application revision: 8031baf
